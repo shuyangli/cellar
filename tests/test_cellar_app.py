@@ -32,19 +32,6 @@ def create_item(client: TestClient, producer: str, wine_name: str, quantity: int
     return response.json()
 
 
-def test_homepage_is_cellar_focused_and_hides_management_forms(client: TestClient):
-    response = client.get("/")
-
-    assert response.status_code == 200
-    html = response.text
-    assert "Cellar" in html
-    assert "Add a wine" not in html
-    assert "Log a tasting" not in html
-    assert "wishlist" not in html.lower()
-    assert "Manager API" not in html
-    assert "GET /api/cellar" not in html
-
-
 def test_manager_api_can_create_and_list_cellar_inventory(client: TestClient):
     create_response = client.post(
         "/api/cellar/items",
@@ -146,24 +133,6 @@ def test_init_db_upgrades_legacy_wines_table_with_cellar_columns(tmp_path: Path)
     assert "quantity" in columns
     assert "location" in columns
     assert "last_event_reason" in columns
-
-
-def test_homepage_paginates_cellar_items_and_uses_full_width_layout(client: TestClient):
-    for idx in range(1, 17):
-        create_item(client, f"Producer {idx:02d}", f"Wine {idx:02d}")
-
-    response = client.get("/?page=2&page_size=5")
-
-    assert response.status_code == 200
-    html = response.text
-    assert "cellar-page" in html
-    assert "Producer 06" in html
-    assert "Producer 10" in html
-    assert "Producer 05" not in html
-    assert "Producer 11" not in html
-    assert "Page 2 of 4" in html
-    assert 'href="/?page=1&amp;page_size=5"' in html
-    assert 'href="/?page=3&amp;page_size=5"' in html
 
 
 def test_cellar_api_supports_pagination_metadata(client: TestClient):

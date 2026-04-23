@@ -5,17 +5,12 @@ from contextlib import asynccontextmanager, closing
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 APP_DIR = Path(__file__).resolve().parent
 DATA_DIR = APP_DIR / "data"
 DB_PATH = DATA_DIR / "wine_tracker.db"
-TEMPLATES_DIR = APP_DIR / "templates"
-STATIC_DIR = APP_DIR / "static"
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -24,8 +19,6 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Wine Cellar", lifespan=lifespan)
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 WINE_COLUMNS: dict[str, str] = {
     "quantity": "INTEGER NOT NULL DEFAULT 0",
@@ -245,24 +238,6 @@ def fetch_cellar_payload(page: int = 1, page_size: int = 50) -> dict[str, Any]:
             "items": items,
             "pagination": pagination,
         }
-
-
-@app.get("/", response_class=HTMLResponse)
-def index(
-    request: Request,
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
-) -> HTMLResponse:
-    payload = fetch_cellar_payload(page=page, page_size=page_size)
-    return templates.TemplateResponse(
-        request=request,
-        name="index.html",
-        context={
-            "request": request,
-            "page_size_options": [10, 25, 50, 100],
-            **payload,
-        },
-    )
 
 
 @app.get("/api/cellar")
