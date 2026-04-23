@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wine Cellar</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="cellar-page">
+  <header class="hero">
+    <div>
+      <p class="eyebrow">Private cellar view</p>
+      <h1>Cellar</h1>
+      <p class="subtitle">Inventory only.</p>
+    </div>
+    <div class="stats">
+      <div class="stat"><strong>{{ summary['labels']['bottles'] }}</strong><span>bottles</span></div>
+      <div class="stat"><strong>{{ summary['labels']['labels'] }}</strong><span>labels</span></div>
+      <div class="stat"><strong>{{ summary['labels']['producers'] }}</strong><span>producers</span></div>
+      <div class="stat"><strong>{{ summary['labels']['regions'] }}</strong><span>regions</span></div>
+    </div>
+  </header>
+
+  <main class="cellar-layout">
+    <section class="panel overview-panel">
+      <div class="overview-header">
+        <div>
+          <h2>What’s in the cellar</h2>
+          <p class="muted">Estimated acquisition cost: ${{ '%.2f'|format(summary['estimated_cost']) }}</p>
+        </div>
+        <div class="pagination-summary muted">
+          Page {{ pagination['page'] }} of {{ pagination['total_pages'] }}
+          <span class="separator">•</span>
+          {{ pagination['total_items'] }} labels total
+        </div>
+      </div>
+      {% if items %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Wine</th>
+              <th>Inventory</th>
+              <th>Where</th>
+              <th>Origin</th>
+              <th>Drinking window</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+            <tr>
+              <td>
+                <strong>{{ item['producer'] }}</strong><br>
+                {{ item['wine_name'] }}{% if item['vintage'] %} ({{ item['vintage'] }}){% endif %}
+                {% if item['varietal'] %}<div class="muted">{{ item['varietal'] }}</div>{% endif %}
+              </td>
+              <td>
+                <strong>{{ item['quantity'] }}</strong> × {{ item['bottle_size_ml'] or 750 }} mL
+                {% if item['acquired_price'] %}<div class="muted">${{ '%.2f'|format(item['acquired_price']) }} each</div>{% endif %}
+              </td>
+              <td>
+                {{ item['location'] or '—' }}
+                {% if item['acquired_from'] %}<div class="muted">from {{ item['acquired_from'] }}</div>{% endif %}
+              </td>
+              <td>
+                {{ item['country'] or '—' }}
+                {% if item['region'] %}<div class="muted">{{ item['region'] }}</div>{% endif %}
+                {% if item['appellation'] %}<div class="muted">{{ item['appellation'] }}</div>{% endif %}
+              </td>
+              <td>
+                {% if item['drinking_window_start'] or item['drinking_window_end'] %}
+                  {{ item['drinking_window_start'] or 'now' }} → {{ item['drinking_window_end'] or 'open' }}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+              <td>
+                {% if item['notes'] %}<div>{{ item['notes'] }}</div>{% endif %}
+                {% if item['last_event_reason'] %}<div class="muted">last update: {{ item['last_event_reason'] }}</div>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <nav class="pagination-nav" aria-label="Cellar pagination">
+        <div class="pagination-links">
+          {% if pagination['has_prev'] %}
+          <a class="page-link" href="{{ request.url.path }}?page={{ pagination['page'] - 1 }}&amp;page_size={{ pagination['page_size'] }}">Previous</a>
+          {% else %}
+          <span class="page-link disabled">Previous</span>
+          {% endif %}
+
+          {% if pagination['has_next'] %}
+          <a class="page-link" href="{{ request.url.path }}?page={{ pagination['page'] + 1 }}&amp;page_size={{ pagination['page_size'] }}">Next</a>
+          {% else %}
+          <span class="page-link disabled">Next</span>
+          {% endif %}
+        </div>
+
+        <div class="page-size-links muted">
+          Show:
+          {% for option in page_size_options %}
+            {% if option == pagination['page_size'] %}
+              <span class="page-size current">{{ option }}</span>
+            {% else %}
+              <a class="page-size" href="{{ request.url.path }}?page=1&amp;page_size={{ option }}">{{ option }}</a>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </nav>
+      {% else %}
+      <div class="empty-state">
+        <h3>No bottles logged yet.</h3>
+        <p>The cellar view will fill up as I add bottles.</p>
+      </div>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>
