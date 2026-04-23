@@ -1,23 +1,33 @@
 # Wine Cellar
 
-Local SQLite + FastAPI app for a private cellar inventory view.
+Local SQLite + FastAPI backend with a TanStack Start UI for a private cellar inventory view.
 
 What the app does:
-- shows what is currently in the cellar
-- keeps the browser UI read-only
-- exposes manager APIs for adding bottles and adjusting counts
+- FastAPI serves cellar data as JSON
+- TanStack Start (in [`ui/`](ui/)) renders the browser UI (read-only)
+- manager APIs for adding bottles and adjusting counts
 
 Manager APIs:
 - `GET /api/cellar` — summary + current inventory
 - `POST /api/cellar/items` — add a cellar item
 - `POST /api/cellar/items/<id>/adjust` — change bottle count after buys, openings, gifts, or moves
 
-Run with Hermes venv:
+Run the backend:
 
 ```bash
 cd /Users/shuyangli/src/wine-tracker
 /Users/shuyangli/.hermes/hermes-agent/venv/bin/python -m uvicorn app:app --host 0.0.0.0 --port 8787
 ```
+
+Run the UI (in a separate shell):
+
+```bash
+cd ui
+npm install
+npm run dev   # http://localhost:3000
+```
+
+The Vite dev server proxies `/api` and `/health` to the FastAPI backend on `:8787`.
 
 Health check:
 
