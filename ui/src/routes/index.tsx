@@ -19,6 +19,7 @@ import {
 import { Button } from '#/components/ui/button'
 import { Badge } from '#/components/ui/badge'
 import {
+  DEFAULT_PAGE_SIZE,
   fetchCellar,
   PAGE_SIZE_OPTIONS,
   photoUrl,
@@ -33,8 +34,6 @@ type CellarSearch = {
   wine_type?: string
   all?: boolean
 }
-
-const DEFAULT_PAGE_SIZE: PageSizeOption = 25
 
 export const Route = createFileRoute('/')({
   validateSearch: (raw): CellarSearch => {
@@ -287,7 +286,7 @@ function InventoryRow({ item }: { item: CellarItem }) {
           ) : null}
           <div>
             <Link
-              to="/wine/$wineId"
+              to="/wine/$wineId/"
               params={{ wineId: String(item.id) }}
               className="font-medium hover:underline"
             >

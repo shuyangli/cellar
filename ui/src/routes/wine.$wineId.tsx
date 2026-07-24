@@ -20,6 +20,7 @@ import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import {
   adjustInventory,
+  DEFAULT_CELLAR_SEARCH,
   deletePurchase,
   deleteTasting,
   deleteWine,
@@ -63,6 +64,24 @@ function WinePage() {
     void run(() => adjustInventory(wine.id, delta, reason))
   }
 
+  const onMarkDrunk = () => {
+    const answer = window.prompt(
+      `How many bottles did you drink? (${wine.quantity} in cellar)`,
+      '1',
+    )
+    if (answer === null) return
+    const count = Number(answer.trim())
+    if (!Number.isInteger(count) || count < 1 || count > wine.quantity) {
+      setError(
+        `Enter a whole number between 1 and ${wine.quantity} bottle${wine.quantity === 1 ? '' : 's'}.`,
+      )
+      return
+    }
+    void run(() =>
+      adjustInventory(wine.id, -count, 'drunk (marked in web UI)', 'consume'),
+    )
+  }
+
   const onDeleteWine = () => {
     if (
       !window.confirm(
@@ -74,7 +93,7 @@ function WinePage() {
       setError(null)
       try {
         await deleteWine(wine.id)
-        await navigate({ to: '/' })
+        await navigate({ to: '/', search: DEFAULT_CELLAR_SEARCH })
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause))
       }
@@ -86,6 +105,7 @@ function WinePage() {
       <div>
         <Link
           to="/"
+          search={DEFAULT_CELLAR_SEARCH}
           className="text-xs text-muted-foreground hover:text-foreground"
         >
           ← Back to cellar
@@ -121,6 +141,13 @@ function WinePage() {
           </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            disabled={wine.quantity < 1}
+            onClick={onMarkDrunk}
+          >
+            Mark drunk
+          </Button>
           <Button variant="outline" size="sm" onClick={() => onAdjust(1)}>
             +1 bottle
           </Button>
@@ -216,7 +243,7 @@ function EditCard({
     try {
       const fields: WineUpdate = {}
       for (const field of EDIT_FIELDS) {
-        const value = draft[field.key]?.trim() ?? ''
+        const value = draft[field.key].trim()
         const original = wine[field.key as keyof WineDossier]
         const originalText = original != null ? String(original) : ''
         if (value === originalText) continue
@@ -536,7 +563,7 @@ function EventsCard({ wine }: { wine: WineDossier }) {
             <span className="text-muted-foreground">
               {event.reason ?? event.event_type}
               <span className="ml-2 text-xs opacity-70">
-                {event.occurred_at?.slice(0, 10)}
+                {event.occurred_at.slice(0, 10)}
               </span>
             </span>
           </div>

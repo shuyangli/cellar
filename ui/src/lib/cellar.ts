@@ -1,3 +1,5 @@
+import { CELLAR_BASE_PATH } from './base-path'
+
 export type CellarItem = {
   id: number
   producer: string
@@ -157,6 +159,10 @@ export type CellarPayload = {
 
 export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
 export type PageSizeOption = (typeof PAGE_SIZE_OPTIONS)[number]
+export const DEFAULT_PAGE_SIZE: PageSizeOption = 25
+
+/** Default search params for the cellar index route (page 1, default size). */
+export const DEFAULT_CELLAR_SEARCH = { page: 1, page_size: DEFAULT_PAGE_SIZE }
 
 function apiBase(): string {
   if (typeof window === 'undefined') {
@@ -165,7 +171,7 @@ function apiBase(): string {
       'http://127.0.0.1:8788'
     )
   }
-  return ''
+  return CELLAR_BASE_PATH
 }
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -220,7 +226,8 @@ async function mutate<T>(
 ): Promise<T> {
   const res = await fetch(`${apiBase()}${path}`, {
     method,
-    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    headers:
+      body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
   if (!res.ok) {
@@ -276,10 +283,12 @@ export function adjustInventory(
   wineId: number,
   delta: number,
   reason: string,
+  eventType: 'adjust' | 'consume' | 'gift' = 'adjust',
 ): Promise<WineDossier> {
   return mutate<WineDossier>(`/api/cellar/items/${wineId}/adjust`, 'POST', {
     delta,
     reason,
+    event_type: eventType,
   })
 }
 

@@ -12,9 +12,9 @@ import appCss from '../styles.css?url'
 
 const NAV_LINKS = [
   { to: '/', label: 'Cellar' },
-  { to: '/drink-now', label: 'Drink now' },
-  { to: '/history', label: 'History' },
-  { to: '/stats', label: 'Stats' },
+  { to: '/drink-now/', label: 'Drink now' },
+  { to: '/history/', label: 'History' },
+  { to: '/stats/', label: 'Stats' },
 ] as const
 
 export const Route = createRootRoute({

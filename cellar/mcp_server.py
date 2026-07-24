@@ -26,7 +26,9 @@ mcp = FastMCP(
         "avoid duplicates; if the wine exists, use its id, otherwise add_wine (enrich "
         "with country/region/appellation/varietal/wine_type/drinking window before "
         "adding). Then log_purchase for buys, log_tasting for drinking + reviews. "
-        "Dates are ISO YYYY-MM-DD, ratings 0-100, prices per bottle."
+        "Dates are ISO YYYY-MM-DD, ratings 0-100, prices per bottle. Reviews are "
+        "per-person: attribute each tasting to whoever actually tasted via "
+        "log_tasting's user parameter (list_users shows known reviewers)."
     ),
 )
 
@@ -160,8 +162,14 @@ def log_tasting(
     mined later for preferences, so keep it rich (aromas, structure, evolution,
     context). By default consumes one bottle from the cellar; set
     consume_bottle=false for wines tasted elsewhere (then set context_type to
-    'restaurant' or 'tasting' and venue). user defaults to the cellar owner;
-    pass a name for someone else. tasted_on defaults to today."""
+    'restaurant' or 'tasting' and venue). tasted_on defaults to today.
+
+    ATTRIBUTION: every review belongs to the person who actually tasted — work
+    out who is speaking (Telegram sender, email From) and pass their name as
+    user; it defaults to the cellar owner. Call list_users first and reuse the
+    existing spelling; unknown names create a new reviewer. When several people
+    review the same bottle, log one tasting per person, with
+    consume_bottle=true on only the first."""
     return core.log_tasting(
         conn,
         wine_id,
@@ -176,6 +184,24 @@ def log_tasting(
         tasted_on=tasted_on or None,
         consume_bottle=consume_bottle,
     )
+
+
+@mcp.tool()
+@_with_db
+def list_users(conn) -> list[dict[str, Any]]:
+    """Known reviewers with review counts and last review date. Check before
+    log_tasting so a review is attributed under the person's existing name
+    (avoid creating 'Alex' when 'Alexander' already exists)."""
+    return core.list_users(conn)
+
+
+@mcp.tool()
+@_with_db
+def set_tasting_user(conn, tasting_id: int, user: str) -> dict[str, Any]:
+    """Reattribute an existing review (tasting) to the named reviewer — use to
+    fix wrong or missing attribution. Unknown names create a new reviewer.
+    Tasting ids are visible in get_wine output."""
+    return core.set_tasting_user(conn, tasting_id, user)
 
 
 @mcp.tool()

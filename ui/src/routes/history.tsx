@@ -39,7 +39,7 @@ function HistoryPage() {
                     <Badge className="tabular-nums">{tasting.rating}</Badge>
                   ) : null}
                   <Link
-                    to="/wine/$wineId"
+                    to="/wine/$wineId/"
                     params={{ wineId: String(tasting.wine_id) }}
                     className="font-medium hover:underline"
                   >

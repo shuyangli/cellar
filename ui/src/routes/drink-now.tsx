@@ -89,7 +89,7 @@ function WindowSection({
           >
             <div className="min-w-0">
               <Link
-                to="/wine/$wineId"
+                to="/wine/$wineId/"
                 params={{ wineId: String(item.id) }}
                 className="font-medium hover:underline"
               >

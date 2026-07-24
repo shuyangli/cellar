@@ -71,7 +71,7 @@ function StatsPage() {
                 className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0"
               >
                 <Link
-                  to="/wine/$wineId"
+                  to="/wine/$wineId/"
                   params={{ wineId: String(wine.id) }}
                   className="min-w-0 truncate font-medium hover:underline"
                 >
