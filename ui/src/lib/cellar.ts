@@ -279,10 +279,12 @@ export function adjustInventory(
   wineId: number,
   delta: number,
   reason: string,
+  eventType: 'adjust' | 'consume' | 'gift' = 'adjust',
 ): Promise<WineDossier> {
   return mutate<WineDossier>(`/api/cellar/items/${wineId}/adjust`, 'POST', {
     delta,
     reason,
+    event_type: eventType,
   })
 }
 

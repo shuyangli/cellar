@@ -63,6 +63,24 @@ function WinePage() {
     void run(() => adjustInventory(wine.id, delta, reason))
   }
 
+  const onMarkDrunk = () => {
+    const answer = window.prompt(
+      `How many bottles did you drink? (${wine.quantity} in cellar)`,
+      '1',
+    )
+    if (answer === null) return
+    const count = Number(answer.trim())
+    if (!Number.isInteger(count) || count < 1 || count > wine.quantity) {
+      setError(
+        `Enter a whole number between 1 and ${wine.quantity} bottle${wine.quantity === 1 ? '' : 's'}.`,
+      )
+      return
+    }
+    void run(() =>
+      adjustInventory(wine.id, -count, 'drunk (marked in web UI)', 'consume'),
+    )
+  }
+
   const onDeleteWine = () => {
     if (
       !window.confirm(
@@ -121,6 +139,13 @@ function WinePage() {
           </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            disabled={wine.quantity < 1}
+            onClick={onMarkDrunk}
+          >
+            Mark drunk
+          </Button>
           <Button variant="outline" size="sm" onClick={() => onAdjust(1)}>
             +1 bottle
           </Button>
