@@ -7,15 +7,32 @@ import viteReact from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 const API_TARGET = process.env.VITE_API_TARGET ?? 'http://127.0.0.1:8788'
+const configuredBasePath = process.env.CELLAR_BASE_PATH?.trim() ?? ''
+const basePath = configuredBasePath
+  ? `/${configuredBasePath.replace(/^\/+|\/+$/g, '')}`
+  : ''
+const viteBase = `${basePath || ''}/`
 
-const config = defineConfig({
+const config = defineConfig(({ command }) => ({
+  base: viteBase,
+  define: {
+    __CELLAR_BASE_PATH__: JSON.stringify(basePath),
+  },
   resolve: { tsconfigPaths: true },
   plugins: [
-    // devtools() hangs `vite build`; it's dev-only anyway.
-    ...(process.env.NODE_ENV === 'production' ? [] : [devtools()]),
+    // devtools() hangs `vite build` (it does not respect NODE_ENV, which plain
+    // `npm run build` never sets anyway); include it only when serving in dev.
+    ...(command === 'serve' ? [devtools()] : []),
     tailwindcss(),
     // SPA mode: the build emits static files that FastAPI serves directly.
-    tanstackStart({ spa: { enabled: true } }),
+    tanstackStart({
+      spa: {
+        enabled: true,
+        maskPath: `${basePath}/history`,
+      },
+      router: { basepath: basePath || undefined },
+      client: { base: basePath || '/' },
+    }),
     viteReact(),
   ],
   server: {
@@ -25,6 +42,6 @@ const config = defineConfig({
       '/health': { target: API_TARGET, changeOrigin: true },
     },
   },
-})
+}))
 
 export default config

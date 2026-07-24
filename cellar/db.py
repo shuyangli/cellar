@@ -210,7 +210,10 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     """Open a connection with sane defaults. Callers own closing it."""
     target = path or config.db_path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(target)
+    # FastAPI may enter, use, and exit a yield dependency on different worker
+    # threads. Each request still owns one connection; disable only sqlite3's
+    # thread-affinity check so that connection can follow the request lifecycle.
+    conn = sqlite3.connect(target, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")

@@ -1,14 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import {
   cellarPath,
   normalizeCellarBasePath,
   readCellarBasePath,
 } from './base-path'
-
-afterEach(() => {
-  vi.unstubAllGlobals()
-})
 
 describe('cellar base path', () => {
   it('normalizes an injected reverse-proxy prefix', () => {
@@ -17,9 +13,8 @@ describe('cellar base path', () => {
     expect(normalizeCellarBasePath('')).toBe('')
   })
 
-  it('reads the runtime prefix injected into the page', () => {
-    vi.stubGlobal('window', { __CELLAR_BASE_PATH__: '/cellar/' })
-    expect(readCellarBasePath()).toBe('/cellar')
+  it('defaults to the root deployment when no build prefix is configured', () => {
+    expect(readCellarBasePath()).toBe('')
   })
 
   it('prefixes root-relative API and photo paths', () => {

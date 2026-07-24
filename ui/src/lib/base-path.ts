@@ -1,8 +1,4 @@
-declare global {
-  interface Window {
-    __CELLAR_BASE_PATH__?: string
-  }
-}
+declare const __CELLAR_BASE_PATH__: string
 
 export function normalizeCellarBasePath(raw: string | undefined): string {
   const value = (raw ?? '').trim()
@@ -12,8 +8,9 @@ export function normalizeCellarBasePath(raw: string | undefined): string {
 }
 
 export function readCellarBasePath(): string {
-  if (typeof window === 'undefined') return ''
-  return normalizeCellarBasePath(window.__CELLAR_BASE_PATH__)
+  return normalizeCellarBasePath(
+    typeof __CELLAR_BASE_PATH__ === 'string' ? __CELLAR_BASE_PATH__ : '',
+  )
 }
 
 export function cellarPath(

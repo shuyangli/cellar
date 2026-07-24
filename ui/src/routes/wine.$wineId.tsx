@@ -20,6 +20,7 @@ import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import {
   adjustInventory,
+  DEFAULT_CELLAR_SEARCH,
   deletePurchase,
   deleteTasting,
   deleteWine,
@@ -92,7 +93,7 @@ function WinePage() {
       setError(null)
       try {
         await deleteWine(wine.id)
-        await navigate({ to: '/' })
+        await navigate({ to: '/', search: DEFAULT_CELLAR_SEARCH })
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause))
       }
@@ -104,6 +105,7 @@ function WinePage() {
       <div>
         <Link
           to="/"
+          search={DEFAULT_CELLAR_SEARCH}
           className="text-xs text-muted-foreground hover:text-foreground"
         >
           ← Back to cellar
@@ -241,7 +243,7 @@ function EditCard({
     try {
       const fields: WineUpdate = {}
       for (const field of EDIT_FIELDS) {
-        const value = draft[field.key]?.trim() ?? ''
+        const value = draft[field.key].trim()
         const original = wine[field.key as keyof WineDossier]
         const originalText = original != null ? String(original) : ''
         if (value === originalText) continue
@@ -561,7 +563,7 @@ function EventsCard({ wine }: { wine: WineDossier }) {
             <span className="text-muted-foreground">
               {event.reason ?? event.event_type}
               <span className="ml-2 text-xs opacity-70">
-                {event.occurred_at?.slice(0, 10)}
+                {event.occurred_at.slice(0, 10)}
               </span>
             </span>
           </div>

@@ -159,6 +159,10 @@ export type CellarPayload = {
 
 export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
 export type PageSizeOption = (typeof PAGE_SIZE_OPTIONS)[number]
+export const DEFAULT_PAGE_SIZE: PageSizeOption = 25
+
+/** Default search params for the cellar index route (page 1, default size). */
+export const DEFAULT_CELLAR_SEARCH = { page: 1, page_size: DEFAULT_PAGE_SIZE }
 
 function apiBase(): string {
   if (typeof window === 'undefined') {

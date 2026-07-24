@@ -1,4 +1,5 @@
 import sqlite3
+import threading
 from pathlib import Path
 
 import pytest
@@ -425,3 +426,21 @@ def test_photo_endpoint_rejects_traversal(client, data_dir: Path):
     # answers (404 or the SPA shell), it must not leak file contents.
     response = client.get("/photos/%2e%2e%2fcellar-secret.txt")
     assert b"secret" not in response.content
+
+
+def test_connection_supports_fastapi_worker_thread_handoffs(tmp_path: Path) -> None:
+    conn = db.connect(tmp_path / "threaded.db")
+    errors: list[BaseException] = []
+
+    def query_from_worker() -> None:
+        try:
+            conn.execute("SELECT 1").fetchone()
+        except BaseException as exc:
+            errors.append(exc)
+
+    worker = threading.Thread(target=query_from_worker)
+    worker.start()
+    worker.join()
+    conn.close()
+
+    assert errors == []
