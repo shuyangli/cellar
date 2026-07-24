@@ -86,6 +86,37 @@ def resolve_user(conn: sqlite3.Connection, user: str | int | None) -> int:
     return cursor.lastrowid
 
 
+def list_users(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """All known reviewers with their review activity."""
+    return _rows(
+        conn.execute(
+            """
+            SELECT u.id, u.name, u.is_default,
+                   COUNT(t.id) AS tasting_count,
+                   MAX(t.tasted_on) AS last_tasted_on
+            FROM users u LEFT JOIN tastings t ON t.user_id = u.id
+            GROUP BY u.id
+            ORDER BY u.is_default DESC, u.name COLLATE NOCASE
+            """
+        ).fetchall()
+    )
+
+
+def set_tasting_user(
+    conn: sqlite3.Connection, tasting_id: int, user: str | int
+) -> dict[str, Any]:
+    """Reattribute an existing tasting to a different reviewer."""
+    if user is None or user == "":
+        raise ValueError("user is required")
+    row = conn.execute("SELECT wine_id FROM tastings WHERE id = ?", (tasting_id,)).fetchone()
+    if row is None:
+        raise ValueError(f"no tasting with id {tasting_id}")
+    user_id = resolve_user(conn, user)
+    conn.execute("UPDATE tastings SET user_id = ? WHERE id = ?", (user_id, tasting_id))
+    conn.commit()
+    return get_wine(conn, row["wine_id"])
+
+
 # ---------------------------------------------------------------------------
 # Wines
 

@@ -324,6 +324,39 @@ def test_delete_tasting_restores_bottle(conn):
     assert sum(event["delta"] for event in wine["events"]) == 2
 
 
+def test_tastings_attributed_per_user(conn):
+    wine = add_sample_wine(conn)
+    core.log_purchase(conn, wine["id"], 2)
+    core.log_tasting(conn, wine["id"], rating=92, tasting_notes="owner take")
+    wine = core.log_tasting(
+        conn, wine["id"], user="Alex", rating=88, tasting_notes="alex take", consume_bottle=False
+    )
+    assert [t["user_name"] for t in wine["tastings"]] == ["Shuyang", "Alex"]
+    assert wine["quantity"] == 1  # shared bottle consumed once
+
+    users = {u["name"]: u for u in core.list_users(conn)}
+    assert users["Shuyang"]["is_default"] == 1
+    assert users["Shuyang"]["tasting_count"] == 1
+    assert users["Alex"]["tasting_count"] == 1
+
+    # Case-insensitive reuse: "alex" must not create a second reviewer.
+    core.log_tasting(conn, wine["id"], user="alex", rating=89, consume_bottle=False)
+    assert len(core.list_users(conn)) == 2
+
+
+def test_set_tasting_user_reattributes_review(conn):
+    wine = add_sample_wine(conn)
+    core.log_purchase(conn, wine["id"], 1)
+    wine = core.log_tasting(conn, wine["id"], rating=90)
+    tasting_id = wine["tastings"][0]["id"]
+    wine = core.set_tasting_user(conn, tasting_id, "Alex")
+    assert wine["tastings"][0]["user_name"] == "Alex"
+    with pytest.raises(ValueError, match="no tasting"):
+        core.set_tasting_user(conn, 9999, "Alex")
+    with pytest.raises(ValueError, match="user is required"):
+        core.set_tasting_user(conn, tasting_id, "")
+
+
 def test_delete_purchase_removes_bottles(conn):
     wine = add_sample_wine(conn)
     wine = core.log_purchase(conn, wine["id"], 3)

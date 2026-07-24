@@ -29,7 +29,13 @@ You manage the owner's wine cellar through the `cellar` MCP tools.
 3. It consumes one bottle by default. For wines drunk at a restaurant or
    tasting room, pass `consume_bottle=false` with `context_type` and `venue`
    (add the wine first with zero stock if it isn't in the cellar).
-4. If someone other than the owner is reviewing, pass their name as `user`.
+4. Reviews are per-person. Work out who the review is from — the message
+   sender (Telegram sender, email From), or whoever the owner says tasted —
+   then call `list_users` and pass that person's existing name as `user`
+   (unknown names create a new reviewer; never create near-duplicate
+   spellings). When several people review the same bottle, log one tasting per
+   person, with `consume_bottle=true` on only the first. Fix a wrong
+   attribution with `set_tasting_user`.
 
 ## Other
 
