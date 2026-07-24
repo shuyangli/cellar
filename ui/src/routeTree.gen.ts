@@ -9,38 +9,99 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as StatsRouteImport } from './routes/stats'
+import { Route as HistoryRouteImport } from './routes/history'
+import { Route as DrinkNowRouteImport } from './routes/drink-now'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as WineWineIdRouteImport } from './routes/wine.$wineId'
 
+const StatsRoute = StatsRouteImport.update({
+  id: '/stats',
+  path: '/stats',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HistoryRoute = HistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DrinkNowRoute = DrinkNowRouteImport.update({
+  id: '/drink-now',
+  path: '/drink-now',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WineWineIdRoute = WineWineIdRouteImport.update({
+  id: '/wine/$wineId',
+  path: '/wine/$wineId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/drink-now': typeof DrinkNowRoute
+  '/history': typeof HistoryRoute
+  '/stats': typeof StatsRoute
+  '/wine/$wineId': typeof WineWineIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/drink-now': typeof DrinkNowRoute
+  '/history': typeof HistoryRoute
+  '/stats': typeof StatsRoute
+  '/wine/$wineId': typeof WineWineIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/drink-now': typeof DrinkNowRoute
+  '/history': typeof HistoryRoute
+  '/stats': typeof StatsRoute
+  '/wine/$wineId': typeof WineWineIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/drink-now' | '/history' | '/stats' | '/wine/$wineId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/drink-now' | '/history' | '/stats' | '/wine/$wineId'
+  id: '__root__' | '/' | '/drink-now' | '/history' | '/stats' | '/wine/$wineId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DrinkNowRoute: typeof DrinkNowRoute
+  HistoryRoute: typeof HistoryRoute
+  StatsRoute: typeof StatsRoute
+  WineWineIdRoute: typeof WineWineIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/stats': {
+      id: '/stats'
+      path: '/stats'
+      fullPath: '/stats'
+      preLoaderRoute: typeof StatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/history': {
+      id: '/history'
+      path: '/history'
+      fullPath: '/history'
+      preLoaderRoute: typeof HistoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/drink-now': {
+      id: '/drink-now'
+      path: '/drink-now'
+      fullPath: '/drink-now'
+      preLoaderRoute: typeof DrinkNowRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,11 +109,22 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/wine/$wineId': {
+      id: '/wine/$wineId'
+      path: '/wine/$wineId'
+      fullPath: '/wine/$wineId'
+      preLoaderRoute: typeof WineWineIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DrinkNowRoute: DrinkNowRoute,
+  HistoryRoute: HistoryRoute,
+  StatsRoute: StatsRoute,
+  WineWineIdRoute: WineWineIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,39 +1,247 @@
+import sqlite3
 from pathlib import Path
-import sys
 
 import pytest
 from fastapi.testclient import TestClient
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import app as wine_app
+from cellar import config, core, db
+from cellar.web import app
+
+
+@pytest.fixture(autouse=True)
+def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("CELLAR_DATA_DIR", str(tmp_path))
+    return tmp_path
 
 
 @pytest.fixture()
-def client(tmp_path: Path):
-    db_path = tmp_path / "test_wine_tracker.db"
-    wine_app.DB_PATH = db_path
-    wine_app.init_db()
-    with TestClient(wine_app.app) as test_client:
+def conn():
+    connection = db.open_db()
+    yield connection
+    connection.close()
+
+
+@pytest.fixture()
+def client():
+    with TestClient(app) as test_client:
         yield test_client
 
 
-def create_item(client: TestClient, producer: str, wine_name: str, quantity: int = 1) -> dict:
-    response = client.post(
-        "/api/cellar/items",
-        json={
-            "producer": producer,
-            "wine_name": wine_name,
-            "vintage": "2022",
-            "quantity": quantity,
-            "location": "Rack A",
-        },
+def add_sample_wine(conn, **overrides):
+    fields = {
+        "producer": "Pierre Peters",
+        "wine_name": "Cuvée de Réserve",
+        "vintage": "NV",
+        "country": "France",
+        "region": "Champagne",
+        "appellation": "Le Mesnil-sur-Oger",
+        "varietal": "Chardonnay",
+        "wine_type": "sparkling",
+    }
+    fields.update(overrides)
+    return core.add_wine(conn, **fields)
+
+
+# ---------------------------------------------------------------------------
+# Migrations
+
+
+def build_old_database(path: Path) -> None:
+    """Create a database exactly as the old single-file app would have."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE wines (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producer TEXT NOT NULL,
+            wine_name TEXT NOT NULL,
+            vintage TEXT, country TEXT, region TEXT, appellation TEXT,
+            varietal TEXT, source_app TEXT, cellartracker_wine_id TEXT,
+            photo_ref TEXT, notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            quantity INTEGER NOT NULL DEFAULT 0,
+            bottle_size_ml INTEGER, location TEXT, acquired_from TEXT,
+            acquired_price REAL, drinking_window_start TEXT,
+            drinking_window_end TEXT, last_event_reason TEXT
+        );
+        CREATE TABLE tastings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            wine_id INTEGER, context_type TEXT NOT NULL, venue TEXT,
+            price_paid REAL, rating INTEGER,
+            liked INTEGER NOT NULL DEFAULT 0,
+            buy_again INTEGER NOT NULL DEFAULT 0,
+            tasting_notes TEXT, food_pairing TEXT, tasted_on TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (wine_id) REFERENCES wines(id)
+        );
+        CREATE TABLE wishlist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            wine_id INTEGER, shop_name TEXT, listed_price REAL,
+            match_confidence TEXT, reason TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (wine_id) REFERENCES wines(id)
+        );
+        INSERT INTO wines (producer, wine_name, vintage, quantity, acquired_from, acquired_price)
+        VALUES ('Produttori del Barbaresco', 'Barbaresco', '2019', 6, 'K&L', 42.0);
+        INSERT INTO wines (producer, wine_name, vintage, quantity)
+        VALUES ('Drunk Up', 'Empty Wine', '2015', 0);
+        INSERT INTO tastings (wine_id, context_type, rating, tasting_notes)
+        VALUES (1, 'home', 92, 'classic nebbiolo');
+        """
     )
-    assert response.status_code == 201
-    return response.json()
+    conn.commit()
+    conn.close()
 
 
-def test_manager_api_can_create_and_list_cellar_inventory(client: TestClient):
-    create_response = client.post(
+def test_migrates_old_database_in_place(data_dir: Path):
+    build_old_database(config.db_path())
+    conn = db.open_db()
+    try:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
+
+        # Existing stock got synthesized purchase + event history.
+        wine = core.get_wine(conn, 1)
+        assert wine["quantity"] == 6
+        assert len(wine["purchases"]) == 1
+        assert wine["purchases"][0]["vendor"] == "K&L"
+        assert wine["purchases"][0]["price_per_bottle"] == 42.0
+        assert sum(event["delta"] for event in wine["events"]) == 6
+
+        # Zero-quantity wines get no synthetic history.
+        empty = core.get_wine(conn, 2)
+        assert empty["purchases"] == []
+        assert empty["events"] == []
+
+        # Old tastings survive; default user exists.
+        assert wine["tastings"][0]["rating"] == 92
+        assert core.default_user_id(conn) > 0
+    finally:
+        conn.close()
+
+
+def test_migration_is_idempotent(data_dir: Path):
+    build_old_database(config.db_path())
+    for _ in range(2):
+        conn = db.open_db()
+        conn.close()
+    conn = db.open_db()
+    try:
+        assert len(core.get_wine(conn, 1)["purchases"]) == 1
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Core flows
+
+
+def test_purchase_event_quantity_consistency(conn):
+    wine = add_sample_wine(conn)
+    wine = core.log_purchase(conn, wine["id"], 3, price_per_bottle=74.0, vendor="Chambers Street")
+    assert wine["quantity"] == 3
+    wine = core.log_purchase(conn, wine["id"], 2, price_per_bottle=80.0)
+    assert wine["quantity"] == 5
+    assert len(wine["purchases"]) == 2
+    assert sum(event["delta"] for event in wine["events"]) == wine["quantity"]
+    # Latest-purchase cache feeds the inventory UI.
+    assert wine["acquired_price"] == 80.0
+    assert wine["acquired_from"] == "Chambers Street"
+
+
+def test_tasting_decrements_inventory_and_links_event(conn):
+    wine = add_sample_wine(conn)
+    core.log_purchase(conn, wine["id"], 2)
+    wine = core.log_tasting(
+        conn, wine["id"], rating=93, tasting_notes="chalky, saline, long", buy_again=True
+    )
+    assert wine["quantity"] == 1
+    consume = [event for event in wine["events"] if event["event_type"] == "consume"]
+    assert len(consume) == 1
+    assert consume[0]["tasting_id"] == wine["tastings"][0]["id"]
+    assert wine["tastings"][0]["user_name"] == db.DEFAULT_USER_NAME
+    assert wine["avg_rating"] == 93
+
+
+def test_tasting_elsewhere_keeps_inventory(conn):
+    wine = add_sample_wine(conn)
+    core.log_purchase(conn, wine["id"], 1)
+    wine = core.log_tasting(
+        conn, wine["id"], rating=88, context_type="restaurant", venue="Frenchette",
+        consume_bottle=False,
+    )
+    assert wine["quantity"] == 1
+
+
+def test_second_user_reviews_same_wine(conn):
+    wine = add_sample_wine(conn)
+    core.log_purchase(conn, wine["id"], 2)
+    core.log_tasting(conn, wine["id"], rating=90)
+    wine = core.log_tasting(conn, wine["id"], rating=80, user="Alex", consume_bottle=False)
+    users = {tasting["user_name"] for tasting in wine["tastings"]}
+    assert users == {db.DEFAULT_USER_NAME, "Alex"}
+    assert wine["avg_rating"] == 85.0
+
+
+def test_inventory_cannot_go_negative(conn):
+    wine = add_sample_wine(conn)
+    with pytest.raises(ValueError, match="below zero"):
+        core.log_tasting(conn, wine["id"], rating=90)
+
+
+def test_find_wines_dedupe_search(conn):
+    add_sample_wine(conn)
+    add_sample_wine(conn, producer="Produttori del Barbaresco", wine_name="Barbaresco",
+                    vintage="2019", region="Piedmont", varietal="Nebbiolo",
+                    wine_type="red", country="Italy")
+    assert len(core.find_wines(conn, "barbaresco 2019")) == 1
+    assert len(core.find_wines(conn, "peters champagne")) == 1
+    assert core.find_wines(conn, "produttori 2020") == []
+
+
+def test_read_query_rejects_mutations(conn):
+    with pytest.raises(ValueError):
+        core.read_query(conn, "DELETE FROM wines")
+    with pytest.raises(ValueError):
+        core.read_query(conn, "SELECT 1; DROP TABLE wines")
+    assert core.read_query(conn, "SELECT COUNT(*) AS n FROM wines") == [{"n": 0}]
+
+
+def test_drinking_window_alerts_buckets(conn):
+    ready = add_sample_wine(conn, producer="A", wine_name="Ready",
+                            drinking_window_start="2020", drinking_window_end="2030")
+    approaching = add_sample_wine(conn, producer="B", wine_name="Approaching",
+                                  drinking_window_start="2035", drinking_window_end="2045")
+    past = add_sample_wine(conn, producer="C", wine_name="Past",
+                           drinking_window_start="2010", drinking_window_end="2015")
+    none = add_sample_wine(conn, producer="D", wine_name="NoWindow")
+    for wine in (ready, approaching, past, none):
+        core.log_purchase(conn, wine["id"], 1)
+    alerts = core.drinking_window_alerts(conn)
+    assert [w["wine_name"] for w in alerts["ready"]] == ["Ready"]
+    assert [w["wine_name"] for w in alerts["approaching"]] == ["Approaching"]
+    assert [w["wine_name"] for w in alerts["past_peak"]] == ["Past"]
+    assert [w["wine_name"] for w in alerts["no_window"]] == ["NoWindow"]
+
+
+def test_attach_photo_copies_into_store(conn, tmp_path: Path):
+    wine = add_sample_wine(conn)
+    source = tmp_path / "label.jpg"
+    source.write_bytes(b"fake image bytes")
+    photo = core.attach_photo(conn, str(source), wine_id=wine["id"], kind="label")
+    stored = config.photos_dir() / photo["path"]
+    assert stored.read_bytes() == b"fake image bytes"
+    listing = core.list_inventory(conn, in_stock=False)
+    assert listing["items"][0]["label_photo"] == photo["path"]
+
+
+# ---------------------------------------------------------------------------
+# Web API (original shapes preserved)
+
+
+def test_manager_api_can_create_and_list_cellar_inventory(client):
+    response = client.post(
         "/api/cellar/items",
         json={
             "producer": "Pierre Peters",
@@ -41,119 +249,76 @@ def test_manager_api_can_create_and_list_cellar_inventory(client: TestClient):
             "vintage": "NV",
             "country": "France",
             "region": "Champagne",
-            "appellation": "Le Mesnil-sur-Oger",
-            "varietal": "Chardonnay",
             "quantity": 3,
-            "bottle_size_ml": 750,
-            "location": "Rack A1",
             "acquired_from": "Chambers Street Wines",
             "acquired_price": 74.0,
-            "drinking_window_start": "2026-01-01",
-            "drinking_window_end": "2029-12-31",
-            "notes": "Mineral, sharp, cellar staple",
         },
     )
-
-    assert create_response.status_code == 201
-    created = create_response.json()
+    assert response.status_code == 201
+    created = response.json()
     assert created["quantity"] == 3
-    assert created["location"] == "Rack A1"
+    assert created["acquired_price"] == 74.0
 
-    list_response = client.get("/api/cellar")
-    assert list_response.status_code == 200
-    payload = list_response.json()
+    payload = client.get("/api/cellar").json()
     assert payload["summary"]["labels"]["bottles"] == 3
-    assert len(payload["items"]) == 1
+    assert payload["summary"]["estimated_cost"] == 222.0
+    assert payload["pagination"]["total_items"] == 1
     assert payload["items"][0]["producer"] == "Pierre Peters"
 
 
-def test_manager_api_can_adjust_quantity_without_using_ui_forms(client: TestClient):
-    create_response = client.post(
+def test_adjust_endpoint_writes_event(client):
+    wine_id = client.post(
         "/api/cellar/items",
-        json={
-            "producer": "Clos Cibonne",
-            "wine_name": "Cuvée Tradition Rosé",
-            "vintage": "2022",
-            "quantity": 2,
-            "location": "Shelf 2",
-        },
+        json={"producer": "P", "wine_name": "W", "quantity": 4},
+    ).json()["id"]
+    response = client.post(
+        f"/api/cellar/items/{wine_id}/adjust",
+        json={"delta": -1, "reason": "broke a bottle"},
     )
-    item_id = create_response.json()["id"]
-
-    adjust_response = client.post(
-        f"/api/cellar/items/{item_id}/adjust",
-        json={"delta": -1, "reason": "opened at home"},
-    )
-
-    assert adjust_response.status_code == 200
-    adjusted = adjust_response.json()
-    assert adjusted["quantity"] == 1
-    assert adjusted["last_event_reason"] == "opened at home"
-
-    list_response = client.get("/api/cellar")
-    assert list_response.json()["summary"]["labels"]["bottles"] == 1
-
-
-def test_init_db_upgrades_legacy_wines_table_with_cellar_columns(tmp_path: Path):
-    db_path = tmp_path / "legacy.db"
-    wine_app.DB_PATH = db_path
-
-    import sqlite3
-
-    conn = sqlite3.connect(db_path)
-    conn.execute(
-        """
-        CREATE TABLE wines (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            producer TEXT NOT NULL,
-            wine_name TEXT NOT NULL,
-            vintage TEXT,
-            country TEXT,
-            region TEXT,
-            appellation TEXT,
-            varietal TEXT,
-            source_app TEXT,
-            cellartracker_wine_id TEXT,
-            photo_ref TEXT,
-            notes TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-    )
-    conn.commit()
-    conn.close()
-
-    wine_app.init_db()
-
-    upgraded = sqlite3.connect(db_path)
-    columns = {row[1] for row in upgraded.execute("PRAGMA table_info(wines)").fetchall()}
-    upgraded.close()
-
-    assert "quantity" in columns
-    assert "location" in columns
-    assert "last_event_reason" in columns
-
-
-def test_cellar_api_supports_pagination_metadata(client: TestClient):
-    for idx in range(1, 14):
-        create_item(client, f"Producer {idx:02d}", f"Wine {idx:02d}")
-
-    response = client.get("/api/cellar?page=3&page_size=4")
-
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["pagination"] == {
-        "page": 3,
-        "page_size": 4,
-        "total_items": 13,
-        "total_pages": 4,
-        "has_prev": True,
-        "has_next": True,
-    }
-    assert [item["producer"] for item in payload["items"]] == [
-        "Producer 09",
-        "Producer 10",
-        "Producer 11",
-        "Producer 12",
-    ]
+    body = response.json()
+    assert body["quantity"] == 3
+    assert body["last_event_reason"] == "broke a bottle"
+    events = client.get(f"/api/wines/{wine_id}").json()["events"]
+    assert [event["delta"] for event in events] == [4, -1]
+
+    assert client.post(
+        f"/api/cellar/items/{wine_id}/adjust", json={"delta": -5, "reason": "oops"}
+    ).status_code == 400
+    assert client.post(
+        "/api/cellar/items/9999/adjust", json={"delta": 1, "reason": "x"}
+    ).status_code == 404
+
+
+def test_tasting_and_stats_endpoints(client):
+    wine_id = client.post(
+        "/api/cellar/items",
+        json={"producer": "P", "wine_name": "W", "wine_type": "red", "quantity": 2,
+              "acquired_price": 30.0},
+    ).json()["id"]
+    response = client.post(
+        f"/api/wines/{wine_id}/tastings",
+        json={"rating": 91, "tasting_notes": "great", "buy_again": True},
+    )
+    assert response.status_code == 201
+    assert response.json()["quantity"] == 1
+
+    stats = client.get("/api/stats").json()
+    assert stats["by_type"][0]["wine_type"] == "red"
+    assert stats["top_rated"][0]["avg_rating"] == 91.0
+    history = client.get("/api/tastings").json()
+    assert history[0]["rating"] == 91
+
+    assert client.get("/api/drink-now").status_code == 200
+    assert client.get("/health").json()["ok"] is True
+
+
+def test_photo_endpoint_rejects_traversal(client, data_dir: Path):
+    # A secret file next to the photos dir must not be reachable.
+    (data_dir / "cellar-secret.txt").write_text("secret")
+    for path in ("/photos/.hidden", "/photos/nonexistent.jpg"):
+        assert client.get(path).status_code == 404
+    # Encoded traversal is normalized away from the /photos route; whatever
+    # answers (404 or the SPA shell), it must not leak file contents.
+    response = client.get("/photos/%2e%2e%2fcellar-secret.txt")
+    assert b"secret" not in response.content

@@ -7,6 +7,8 @@ export type CellarItem = {
   region: string | null
   appellation: string | null
   varietal: string | null
+  wine_type: string | null
+  grapes: string | null
   quantity: number
   bottle_size_ml: number | null
   location: string | null
@@ -20,6 +22,112 @@ export type CellarItem = {
   photo_ref: string | null
   last_event_reason: string | null
   updated_at: string | null
+  avg_rating: number | null
+  label_photo: string | null
+}
+
+export type Purchase = {
+  id: number
+  wine_id: number
+  quantity: number
+  price_per_bottle: number | null
+  currency: string
+  vendor: string | null
+  purchase_date: string | null
+  source: string
+  notes: string | null
+  created_at: string
+}
+
+export type Tasting = {
+  id: number
+  wine_id: number
+  user_id: number | null
+  user_name: string | null
+  context_type: string
+  venue: string | null
+  price_paid: number | null
+  rating: number | null
+  liked: number
+  buy_again: number
+  tasting_notes: string | null
+  food_pairing: string | null
+  tasted_on: string | null
+  created_at: string
+}
+
+export type TastingWithWine = Tasting & {
+  producer: string
+  wine_name: string
+  vintage: string | null
+  wine_type: string | null
+  region: string | null
+  country: string | null
+}
+
+export type InventoryEvent = {
+  id: number
+  wine_id: number
+  delta: number
+  event_type: string
+  reason: string | null
+  occurred_at: string
+}
+
+export type Photo = {
+  id: number
+  kind: string
+  path: string
+}
+
+export type WineDossier = CellarItem & {
+  purchases: Array<Purchase>
+  tastings: Array<Tasting>
+  events: Array<InventoryEvent>
+  photos: Array<Photo>
+}
+
+export type DrinkNowPayload = {
+  year: number
+  ready: Array<CellarItem & { closing_soon?: boolean }>
+  approaching: Array<CellarItem>
+  past_peak: Array<CellarItem>
+  no_window: Array<CellarItem>
+}
+
+export type StatsPayload = {
+  summary: CellarSummary
+  by_type: Array<{ wine_type: string; bottles: number; labels: number }>
+  by_country: Array<{ country: string; bottles: number; labels: number }>
+  by_region: Array<{ region: string; bottles: number; labels: number }>
+  spend_by_month: Array<{ month: string; spend: number; bottles: number }>
+  top_rated: Array<{
+    id: number
+    producer: string
+    wine_name: string
+    vintage: string | null
+    quantity: number
+    avg_rating: number
+    tastings: number
+  }>
+  recent_tastings: Array<{
+    id: number
+    wine_id: number
+    producer: string
+    wine_name: string
+    vintage: string | null
+    rating: number | null
+    tasted_on: string | null
+    user_name: string | null
+  }>
+}
+
+export type InventoryFilters = {
+  q?: string
+  wine_type?: string
+  country?: string
+  region?: string
+  in_stock?: boolean
 }
 
 export type CellarSummary = {
@@ -54,20 +162,72 @@ function apiBase(): string {
   if (typeof window === 'undefined') {
     return (
       (typeof process !== 'undefined' && process.env.VITE_API_TARGET) ||
-      'http://127.0.0.1:8787'
+      'http://127.0.0.1:8788'
     )
   }
   return ''
 }
 
+async function fetchJson<T>(path: string): Promise<T> {
+  const res = await fetch(`${apiBase()}${path}`)
+  if (!res.ok) {
+    throw new Error(`Failed to load ${path}: ${res.status} ${res.statusText}`)
+  }
+  return (await res.json()) as T
+}
+
 export async function fetchCellar(
   page: number,
   pageSize: number,
+  filters: InventoryFilters = {},
 ): Promise<CellarPayload> {
-  const url = `${apiBase()}/api/cellar?page=${page}&page_size=${pageSize}`
-  const res = await fetch(url)
-  if (!res.ok) {
-    throw new Error(`Failed to load cellar: ${res.status} ${res.statusText}`)
-  }
-  return (await res.json()) as CellarPayload
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  })
+  if (filters.q) params.set('q', filters.q)
+  if (filters.wine_type) params.set('wine_type', filters.wine_type)
+  if (filters.country) params.set('country', filters.country)
+  if (filters.region) params.set('region', filters.region)
+  if (filters.in_stock === false) params.set('in_stock', 'false')
+  return fetchJson<CellarPayload>(`/api/cellar?${params}`)
+}
+
+export function fetchWine(wineId: number | string): Promise<WineDossier> {
+  return fetchJson<WineDossier>(`/api/wines/${wineId}`)
+}
+
+export function fetchDrinkNow(): Promise<DrinkNowPayload> {
+  return fetchJson<DrinkNowPayload>('/api/drink-now')
+}
+
+export function fetchStats(): Promise<StatsPayload> {
+  return fetchJson<StatsPayload>('/api/stats')
+}
+
+export function fetchTastings(limit = 200): Promise<Array<TastingWithWine>> {
+  return fetchJson<Array<TastingWithWine>>(`/api/tastings?limit=${limit}`)
+}
+
+export function photoUrl(path: string): string {
+  return `${apiBase()}/photos/${path}`
+}
+
+export const WINE_TYPE_OPTIONS = [
+  'red',
+  'white',
+  'rose',
+  'sparkling',
+  'dessert',
+  'fortified',
+  'orange',
+  'other',
+] as const
+
+export function formatWineTitle(item: {
+  producer: string
+  wine_name: string
+  vintage: string | null
+}): string {
+  return `${item.producer} ${item.wine_name}${item.vintage ? ` ${item.vintage}` : ''}`
 }

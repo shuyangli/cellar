@@ -1,0 +1,34 @@
+[project]
+name = "cellar"
+version = "0.2.0"
+description = "Agent-managed wine cellar: SQLite core, MCP server, CLI, and FastAPI web app"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "pydantic>=2.7",
+    "mcp>=1.2",
+]
+
+[project.scripts]
+cellar = "cellar.cli:main"
+cellar-mcp = "cellar.mcp_server:main"
+cellar-web = "cellar.web:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["cellar"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

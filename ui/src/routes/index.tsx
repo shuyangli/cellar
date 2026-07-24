@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
 
 import {
   Card,
@@ -17,34 +18,51 @@ import {
 } from '#/components/ui/table'
 import { Button } from '#/components/ui/button'
 import { Badge } from '#/components/ui/badge'
-import { fetchCellar, PAGE_SIZE_OPTIONS } from '#/lib/cellar'
-import type {
-  CellarItem,
-  CellarPayload,
-  PageSizeOption,
+import {
+  fetchCellar,
+  PAGE_SIZE_OPTIONS,
+  photoUrl,
+  WINE_TYPE_OPTIONS,
 } from '#/lib/cellar'
+import type { CellarItem, CellarPayload, PageSizeOption } from '#/lib/cellar'
 
 type CellarSearch = {
   page: number
   page_size: PageSizeOption
+  q?: string
+  wine_type?: string
+  all?: boolean
 }
 
 const DEFAULT_PAGE_SIZE: PageSizeOption = 25
 
 export const Route = createFileRoute('/')({
   validateSearch: (raw): CellarSearch => {
-    const rawPage = Number((raw).page)
-    const rawSize = Number((raw).page_size)
+    const rawPage = Number(raw.page)
+    const rawSize = Number(raw.page_size)
     const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1
-    const page_size = (PAGE_SIZE_OPTIONS as ReadonlyArray<number>).includes(
-      rawSize,
-    )
+    const page_size = (PAGE_SIZE_OPTIONS as ReadonlyArray<number>).includes(rawSize)
       ? (rawSize as PageSizeOption)
       : DEFAULT_PAGE_SIZE
-    return { page, page_size }
+    const q = typeof raw.q === 'string' && raw.q ? raw.q : undefined
+    const wine_type =
+      typeof raw.wine_type === 'string' && raw.wine_type ? raw.wine_type : undefined
+    const all = raw.all === true || raw.all === 'true' ? true : undefined
+    return { page, page_size, q, wine_type, all }
   },
-  loaderDeps: ({ search }) => ({ page: search.page, page_size: search.page_size }),
-  loader: ({ deps }) => fetchCellar(deps.page, deps.page_size),
+  loaderDeps: ({ search }) => ({
+    page: search.page,
+    page_size: search.page_size,
+    q: search.q,
+    wine_type: search.wine_type,
+    all: search.all,
+  }),
+  loader: ({ deps }) =>
+    fetchCellar(deps.page, deps.page_size, {
+      q: deps.q,
+      wine_type: deps.wine_type,
+      in_stock: !deps.all,
+    }),
   component: CellarPage,
 })
 
@@ -54,16 +72,15 @@ function CellarPage() {
   const { summary, items, pagination } = data
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-8">
-        <Hero summary={summary} />
-        <InventorySection
-          items={items}
-          pagination={pagination}
-          search={search}
-          estimatedCost={summary.estimated_cost}
-        />
-      </div>
+    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
+      <Hero summary={summary} />
+      <FilterBar search={search} />
+      <InventorySection
+        items={items}
+        pagination={pagination}
+        search={search}
+        estimatedCost={summary.estimated_cost}
+      />
     </div>
   )
 }
@@ -85,7 +102,9 @@ function Hero({ summary }: { summary: CellarPayload['summary'] }) {
         <h1 className="font-heading mt-2 text-3xl font-semibold tracking-tight md:text-4xl">
           Cellar
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">Inventory only.</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Managed by agents; reviewed by humans.
+        </p>
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {stats.map((stat) => (
@@ -100,6 +119,89 @@ function Hero({ summary }: { summary: CellarPayload['summary'] }) {
         ))}
       </div>
     </div>
+  )
+}
+
+function FilterBar({ search }: { search: CellarSearch }) {
+  const navigate = useNavigate({ from: Route.fullPath })
+  const [draft, setDraft] = useState(search.q ?? '')
+
+  useEffect(() => {
+    setDraft(search.q ?? '')
+  }, [search.q])
+
+  const apply = (overrides: Partial<CellarSearch>) => {
+    navigate({
+      search: {
+        ...search,
+        page: 1,
+        q: draft || undefined,
+        ...overrides,
+      },
+    })
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <form
+        className="flex min-w-0 flex-1 items-center gap-2"
+        onSubmit={(event) => {
+          event.preventDefault()
+          apply({})
+        }}
+      >
+        <input
+          type="search"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="Search producer, wine, region, grape…"
+          className="h-9 w-full min-w-0 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring sm:max-w-xs"
+        />
+        <Button type="submit" variant="outline" size="sm">
+          Search
+        </Button>
+      </form>
+      <div className="flex flex-wrap items-center gap-1">
+        <TypeChip label="all types" active={!search.wine_type} onClick={() => apply({ wine_type: undefined })} />
+        {WINE_TYPE_OPTIONS.map((type) => (
+          <TypeChip
+            key={type}
+            label={type}
+            active={search.wine_type === type}
+            onClick={() => apply({ wine_type: search.wine_type === type ? undefined : type })}
+          />
+        ))}
+        <TypeChip
+          label={search.all ? 'showing all' : 'in stock'}
+          active={Boolean(search.all)}
+          onClick={() => apply({ all: search.all ? undefined : true })}
+        />
+      </div>
+    </div>
+  )
+}
+
+function TypeChip({
+  label,
+  active,
+  onClick,
+}: {
+  label: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        active
+          ? 'rounded-full bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground'
+          : 'rounded-full border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground'
+      }
+    >
+      {label}
+    </button>
   )
 }
 
@@ -130,16 +232,15 @@ function InventorySection({
       </CardHeader>
       {items.length > 0 ? (
         <>
-          <CardContent className="px-0">
+          <CardContent className="overflow-x-auto px-0">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="px-4">Wine</TableHead>
                   <TableHead>Inventory</TableHead>
-                  <TableHead>Where</TableHead>
                   <TableHead>Origin</TableHead>
                   <TableHead>Drinking window</TableHead>
-                  <TableHead className="px-4">Notes</TableHead>
+                  <TableHead className="px-4">Rating</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -153,12 +254,12 @@ function InventorySection({
         </>
       ) : (
         <CardContent className="py-10 text-center">
-            <h3 className="font-heading text-base font-medium">
-              No bottles logged yet.
-            </h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              The cellar view will fill up as bottles are added.
-            </p>
+          <h3 className="font-heading text-base font-medium">
+            Nothing here yet.
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Tell your agent about a bottle, or clear the filters above.
+          </p>
         </CardContent>
       )}
     </Card>
@@ -175,18 +276,41 @@ function InventoryRow({ item }: { item: CellarItem }) {
   return (
     <TableRow className="align-top">
       <TableCell className="px-4 py-3 whitespace-normal">
-        <div className="font-medium">{item.producer}</div>
-        <div className="text-muted-foreground">
-          {item.wine_name}
-          {item.vintage ? ` (${item.vintage})` : ''}
-        </div>
-        {item.varietal ? (
-          <div className="mt-1">
-            <Badge variant="secondary" className="text-[10px]">
-              {item.varietal}
-            </Badge>
+        <div className="flex items-start gap-3">
+          {item.label_photo ? (
+            <img
+              src={photoUrl(item.label_photo)}
+              alt=""
+              className="mt-0.5 h-12 w-9 shrink-0 rounded-sm border object-cover"
+              loading="lazy"
+            />
+          ) : null}
+          <div>
+            <Link
+              to="/wine/$wineId"
+              params={{ wineId: String(item.id) }}
+              className="font-medium hover:underline"
+            >
+              {item.producer}
+            </Link>
+            <div className="text-muted-foreground">
+              {item.wine_name}
+              {item.vintage ? ` (${item.vintage})` : ''}
+            </div>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {item.wine_type ? (
+                <Badge variant="outline" className="text-[10px] capitalize">
+                  {item.wine_type}
+                </Badge>
+              ) : null}
+              {item.varietal ? (
+                <Badge variant="secondary" className="text-[10px]">
+                  {item.varietal}
+                </Badge>
+              ) : null}
+            </div>
           </div>
-        ) : null}
+        </div>
       </TableCell>
       <TableCell className="whitespace-normal">
         <span className="font-medium tabular-nums">{item.quantity}</span>
@@ -196,9 +320,6 @@ function InventoryRow({ item }: { item: CellarItem }) {
             ${item.acquired_price.toFixed(2)} each
           </div>
         ) : null}
-      </TableCell>
-      <TableCell className="whitespace-normal">
-        {item.location || '—'}
         {item.acquired_from ? (
           <div className="text-muted-foreground">from {item.acquired_from}</div>
         ) : null}
@@ -214,15 +335,13 @@ function InventoryRow({ item }: { item: CellarItem }) {
       </TableCell>
       <TableCell className="whitespace-normal tabular-nums">{drinkingWindow}</TableCell>
       <TableCell className="px-4 whitespace-normal">
-        {item.notes ? <div>{item.notes}</div> : null}
-        {item.last_event_reason ? (
-          <div className="text-muted-foreground">
-            last update: {item.last_event_reason}
-          </div>
-        ) : null}
-        {!item.notes && !item.last_event_reason ? (
+        {item.avg_rating != null ? (
+          <Badge variant="secondary" className="tabular-nums">
+            {item.avg_rating}
+          </Badge>
+        ) : (
           <span className="text-muted-foreground">—</span>
-        ) : null}
+        )}
       </TableCell>
     </TableRow>
   )
@@ -248,8 +367,8 @@ function PaginationFooter({
             <Link
               to="/"
               search={{
+                ...search,
                 page: Math.max(1, pagination.page - 1),
-                page_size: search.page_size,
               }}
             >
               Previous
@@ -268,8 +387,8 @@ function PaginationFooter({
             <Link
               to="/"
               search={{
+                ...search,
                 page: pagination.page + 1,
-                page_size: search.page_size,
               }}
             >
               Next
@@ -299,7 +418,7 @@ function PaginationFooter({
               size="sm"
               className="h-7 px-2 tabular-nums"
             >
-              <Link to="/" search={{ page: 1, page_size: option }}>
+              <Link to="/" search={{ ...search, page: 1, page_size: option }}>
                 {option}
               </Link>
             </Button>
