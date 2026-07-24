@@ -190,9 +190,65 @@ def health(conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
 # Agent-platform endpoints
 
 
+class WineUpdate(BaseModel):
+    producer: str | None = None
+    wine_name: str | None = None
+    vintage: str | None = None
+    country: str | None = None
+    region: str | None = None
+    appellation: str | None = None
+    varietal: str | None = None
+    wine_type: str | None = None
+    grapes: str | None = None
+    bottle_size_ml: int | None = Field(default=None, ge=1)
+    location: str | None = None
+    drinking_window_start: str | None = None
+    drinking_window_end: str | None = None
+    notes: str | None = None
+
+
 @app.get("/api/wines/{wine_id}")
 def api_wine(wine_id: int, conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
     return _wrap(core.get_wine, conn, wine_id)
+
+
+@app.patch("/api/wines/{wine_id}")
+def api_update_wine(
+    wine_id: int, update: WineUpdate, conn: sqlite3.Connection = Depends(get_conn)
+) -> dict[str, Any]:
+    fields = {key: value for key, value in update.model_dump().items() if value is not None}
+    if not fields:
+        raise HTTPException(status_code=400, detail="no fields to update")
+    return _wrap(core.update_wine, conn, wine_id, **fields)
+
+
+@app.delete("/api/wines/{wine_id}")
+def api_delete_wine(
+    wine_id: int, conn: sqlite3.Connection = Depends(get_conn)
+) -> dict[str, Any]:
+    _wrap(core.delete_wine, conn, wine_id)
+    return {"ok": True, "deleted_wine_id": wine_id}
+
+
+@app.delete("/api/tastings/{tasting_id}")
+def api_delete_tasting(
+    tasting_id: int, conn: sqlite3.Connection = Depends(get_conn)
+) -> dict[str, Any]:
+    try:
+        return core.delete_tasting(conn, tasting_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.delete("/api/purchases/{purchase_id}")
+def api_delete_purchase(
+    purchase_id: int, conn: sqlite3.Connection = Depends(get_conn)
+) -> dict[str, Any]:
+    try:
+        return core.delete_purchase(conn, purchase_id)
+    except ValueError as error:
+        status = 404 if str(error).startswith("no purchase") else 400
+        raise HTTPException(status_code=status, detail=str(error)) from error
 
 
 @app.post("/api/wines/{wine_id}/purchases", status_code=201)

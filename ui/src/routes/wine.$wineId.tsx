@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate, useRouter } from '@tanstack/react-router'
+import { useState } from 'react'
 
 import {
   Card,
@@ -16,8 +17,18 @@ import {
   TableRow,
 } from '#/components/ui/table'
 import { Badge } from '#/components/ui/badge'
-import { fetchWine, formatWineTitle, photoUrl } from '#/lib/cellar'
-import type { Purchase, Tasting, WineDossier } from '#/lib/cellar'
+import { Button } from '#/components/ui/button'
+import {
+  adjustInventory,
+  deletePurchase,
+  deleteTasting,
+  deleteWine,
+  fetchWine,
+  photoUrl,
+  updateWine,
+  WINE_TYPE_OPTIONS,
+} from '#/lib/cellar'
+import type { Purchase, Tasting, WineDossier, WineUpdate } from '#/lib/cellar'
 
 export const Route = createFileRoute('/wine/$wineId')({
   loader: ({ params }) => fetchWine(params.wineId),
@@ -26,6 +37,49 @@ export const Route = createFileRoute('/wine/$wineId')({
 
 function WinePage() {
   const wine = Route.useLoaderData()
+  const router = useRouter()
+  const navigate = useNavigate()
+  const [editing, setEditing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const refresh = () => router.invalidate()
+
+  const run = async (action: () => Promise<unknown>) => {
+    setError(null)
+    try {
+      await action()
+      await refresh()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  const onAdjust = (delta: number) => {
+    const reason = window.prompt(
+      delta > 0 ? 'Reason for adding a bottle?' : 'Reason for removing a bottle?',
+      delta > 0 ? 'manual correction' : 'manual correction',
+    )
+    if (reason === null) return
+    void run(() => adjustInventory(wine.id, delta, reason))
+  }
+
+  const onDeleteWine = () => {
+    if (
+      !window.confirm(
+        `Delete "${wine.producer} ${wine.wine_name}" and ALL its purchases, tastings, and photos? This cannot be undone.`,
+      )
+    )
+      return
+    void (async () => {
+      setError(null)
+      try {
+        await deleteWine(wine.id)
+        await navigate({ to: '/' })
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
+    })()
+  }
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
@@ -66,14 +120,190 @@ function WinePage() {
             </div>
           </div>
         </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => onAdjust(1)}>
+            +1 bottle
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={wine.quantity < 1}
+            onClick={() => onAdjust(-1)}
+          >
+            −1 bottle
+          </Button>
+          <Button
+            variant={editing ? 'secondary' : 'outline'}
+            size="sm"
+            onClick={() => setEditing((value) => !value)}
+          >
+            {editing ? 'Close editor' : 'Edit details'}
+          </Button>
+          <Button variant="destructive" size="sm" onClick={onDeleteWine}>
+            Delete wine
+          </Button>
+        </div>
+        {error ? (
+          <p className="mt-2 text-sm text-destructive">{error}</p>
+        ) : null}
       </div>
 
+      {editing ? (
+        <EditCard
+          wine={wine}
+          onSaved={() => {
+            setEditing(false)
+            void refresh()
+          }}
+          onError={setError}
+        />
+      ) : null}
       <FactsCard wine={wine} />
       {wine.photos.length > 0 ? <PhotosCard wine={wine} /> : null}
-      <TastingsCard tastings={wine.tastings} />
-      <PurchasesCard purchases={wine.purchases} />
+      <TastingsCard tastings={wine.tastings} onMutate={run} />
+      <PurchasesCard purchases={wine.purchases} onMutate={run} />
       <EventsCard wine={wine} />
     </div>
+  )
+}
+
+const EDIT_FIELDS: Array<{
+  key: keyof WineUpdate
+  label: string
+  type?: 'number' | 'select'
+  span?: boolean
+}> = [
+  { key: 'producer', label: 'Producer' },
+  { key: 'wine_name', label: 'Wine name' },
+  { key: 'vintage', label: 'Vintage' },
+  { key: 'wine_type', label: 'Type', type: 'select' },
+  { key: 'country', label: 'Country' },
+  { key: 'region', label: 'Region' },
+  { key: 'appellation', label: 'Appellation' },
+  { key: 'varietal', label: 'Varietal' },
+  { key: 'grapes', label: 'Grapes / blend' },
+  { key: 'bottle_size_ml', label: 'Bottle size (mL)', type: 'number' },
+  { key: 'drinking_window_start', label: 'Drink from (year)' },
+  { key: 'drinking_window_end', label: 'Drink until (year)' },
+  { key: 'location', label: 'Location' },
+  { key: 'notes', label: 'Notes', span: true },
+]
+
+function EditCard({
+  wine,
+  onSaved,
+  onError,
+}: {
+  wine: WineDossier
+  onSaved: () => void
+  onError: (message: string) => void
+}) {
+  const [draft, setDraft] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      EDIT_FIELDS.map((field) => [
+        field.key,
+        wine[field.key as keyof WineDossier] != null
+          ? String(wine[field.key as keyof WineDossier])
+          : '',
+      ]),
+    ),
+  )
+  const [saving, setSaving] = useState(false)
+
+  const onSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setSaving(true)
+    try {
+      const fields: WineUpdate = {}
+      for (const field of EDIT_FIELDS) {
+        const value = draft[field.key]?.trim() ?? ''
+        const original = wine[field.key as keyof WineDossier]
+        const originalText = original != null ? String(original) : ''
+        if (value === originalText) continue
+        if (field.type === 'number') {
+          const parsed = Number(value)
+          if (Number.isFinite(parsed) && parsed > 0) {
+            fields[field.key] = parsed as never
+          }
+        } else {
+          fields[field.key] = value as never
+        }
+      }
+      if (Object.keys(fields).length === 0) {
+        onSaved()
+        return
+      }
+      await updateWine(wine.id, fields)
+      onSaved()
+    } catch (cause) {
+      onError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const inputClass =
+    'h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Edit details</CardTitle>
+        <CardDescription>
+          Leave a field unchanged to keep its current value.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={onSubmit} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {EDIT_FIELDS.map((field) => (
+            <label
+              key={field.key}
+              className={`flex flex-col gap-1 ${field.span ? 'sm:col-span-2' : ''}`}
+            >
+              <span className="text-xs text-muted-foreground">{field.label}</span>
+              {field.type === 'select' ? (
+                <select
+                  className={inputClass}
+                  value={draft[field.key] ?? ''}
+                  onChange={(event) =>
+                    setDraft((value) => ({ ...value, [field.key]: event.target.value }))
+                  }
+                >
+                  <option value="">—</option>
+                  {WINE_TYPE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              ) : field.span ? (
+                <textarea
+                  className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={draft[field.key] ?? ''}
+                  onChange={(event) =>
+                    setDraft((value) => ({ ...value, [field.key]: event.target.value }))
+                  }
+                />
+              ) : (
+                <input
+                  type={field.type === 'number' ? 'number' : 'text'}
+                  className={inputClass}
+                  value={draft[field.key] ?? ''}
+                  onChange={(event) =>
+                    setDraft((value) => ({ ...value, [field.key]: event.target.value }))
+                  }
+                />
+              )}
+            </label>
+          ))}
+          <div className="sm:col-span-2">
+            <Button type="submit" size="sm" disabled={saving}>
+              {saving ? 'Saving…' : 'Save changes'}
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -142,7 +372,23 @@ function PhotosCard({ wine }: { wine: WineDossier }) {
   )
 }
 
-function TastingsCard({ tastings }: { tastings: Array<Tasting> }) {
+function TastingsCard({
+  tastings,
+  onMutate,
+}: {
+  tastings: Array<Tasting>
+  onMutate: (action: () => Promise<unknown>) => Promise<void>
+}) {
+  const onDelete = (tasting: Tasting) => {
+    if (
+      !window.confirm(
+        'Delete this tasting? Any bottle it consumed will be returned to inventory.',
+      )
+    )
+      return
+    void onMutate(() => deleteTasting(tasting.id))
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -176,6 +422,14 @@ function TastingsCard({ tastings }: { tastings: Array<Tasting> }) {
                     would buy again
                   </Badge>
                 ) : null}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                  onClick={() => onDelete(tasting)}
+                >
+                  Delete
+                </Button>
               </div>
               {tasting.tasting_notes ? (
                 <p className="mt-2 text-sm">{tasting.tasting_notes}</p>
@@ -193,7 +447,23 @@ function TastingsCard({ tastings }: { tastings: Array<Tasting> }) {
   )
 }
 
-function PurchasesCard({ purchases }: { purchases: Array<Purchase> }) {
+function PurchasesCard({
+  purchases,
+  onMutate,
+}: {
+  purchases: Array<Purchase>
+  onMutate: (action: () => Promise<unknown>) => Promise<void>
+}) {
+  const onDelete = (purchase: Purchase) => {
+    if (
+      !window.confirm(
+        `Delete this purchase of ${purchase.quantity} bottle${purchase.quantity === 1 ? '' : 's'}? Its bottles are removed from inventory.`,
+      )
+    )
+      return
+    void onMutate(() => deletePurchase(purchase.id))
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -208,7 +478,8 @@ function PurchasesCard({ purchases }: { purchases: Array<Purchase> }) {
                 <TableHead>Qty</TableHead>
                 <TableHead>Price</TableHead>
                 <TableHead>Vendor</TableHead>
-                <TableHead className="px-4">Source</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead className="px-4" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -224,7 +495,17 @@ function PurchasesCard({ purchases }: { purchases: Array<Purchase> }) {
                       : '—'}
                   </TableCell>
                   <TableCell>{purchase.vendor ?? '—'}</TableCell>
-                  <TableCell className="px-4">{purchase.source}</TableCell>
+                  <TableCell>{purchase.source}</TableCell>
+                  <TableCell className="px-4 text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                      onClick={() => onDelete(purchase)}
+                    >
+                      Delete
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

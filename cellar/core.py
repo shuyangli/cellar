@@ -365,6 +365,81 @@ def adjust_inventory(
     return get_wine(conn, wine_id)
 
 
+def delete_tasting(conn: sqlite3.Connection, tasting_id: int) -> dict[str, Any]:
+    """Remove a mistaken tasting. Any bottle it consumed is restored."""
+    row = conn.execute("SELECT wine_id FROM tastings WHERE id = ?", (tasting_id,)).fetchone()
+    if row is None:
+        raise ValueError(f"no tasting with id {tasting_id}")
+    wine_id = row["wine_id"]
+    consumed = conn.execute(
+        "SELECT COALESCE(SUM(delta), 0) FROM inventory_events WHERE tasting_id = ?",
+        (tasting_id,),
+    ).fetchone()[0]
+    conn.execute("DELETE FROM inventory_events WHERE tasting_id = ?", (tasting_id,))
+    conn.execute("DELETE FROM photos WHERE tasting_id = ?", (tasting_id,))
+    conn.execute("DELETE FROM tastings WHERE id = ?", (tasting_id,))
+    if consumed:
+        conn.execute(
+            "UPDATE wines SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP"
+            " WHERE id = ?",
+            (consumed, wine_id),
+        )
+    conn.commit()
+    return get_wine(conn, wine_id)
+
+
+def delete_purchase(conn: sqlite3.Connection, purchase_id: int) -> dict[str, Any]:
+    """Remove a mistaken purchase and the bottles it added."""
+    row = conn.execute(
+        "SELECT wine_id, quantity FROM purchases WHERE id = ?", (purchase_id,)
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"no purchase with id {purchase_id}")
+    wine_id = row["wine_id"]
+    added = conn.execute(
+        "SELECT COALESCE(SUM(delta), 0) FROM inventory_events WHERE purchase_id = ?",
+        (purchase_id,),
+    ).fetchone()[0]
+    current = conn.execute(
+        "SELECT quantity FROM wines WHERE id = ?", (wine_id,)
+    ).fetchone()["quantity"]
+    if current - added < 0:
+        raise ValueError(
+            "cannot delete purchase: its bottles are already consumed"
+            " — delete the tastings first or adjust inventory instead"
+        )
+    conn.execute("DELETE FROM inventory_events WHERE purchase_id = ?", (purchase_id,))
+    conn.execute("UPDATE tastings SET purchase_id = NULL WHERE purchase_id = ?", (purchase_id,))
+    conn.execute("UPDATE photos SET purchase_id = NULL WHERE purchase_id = ?", (purchase_id,))
+    conn.execute("DELETE FROM purchases WHERE id = ?", (purchase_id,))
+    if added:
+        conn.execute(
+            "UPDATE wines SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP"
+            " WHERE id = ?",
+            (added, wine_id),
+        )
+    conn.commit()
+    return get_wine(conn, wine_id)
+
+
+def delete_wine(conn: sqlite3.Connection, wine_id: int) -> None:
+    """Remove a wine and everything attached to it, including photo files."""
+    if conn.execute("SELECT 1 FROM wines WHERE id = ?", (wine_id,)).fetchone() is None:
+        raise ValueError(f"no wine with id {wine_id}")
+    photo_paths = [
+        row["path"]
+        for row in conn.execute("SELECT path FROM photos WHERE wine_id = ?", (wine_id,))
+    ]
+    for table in ("inventory_events", "photos", "tastings", "wishlist", "purchases"):
+        conn.execute(f"DELETE FROM {table} WHERE wine_id = ?", (wine_id,))
+    conn.execute("DELETE FROM wines WHERE id = ?", (wine_id,))
+    conn.commit()
+    for path in photo_paths:
+        target = config.photos_dir() / path
+        if target.is_file():
+            target.unlink()
+
+
 # ---------------------------------------------------------------------------
 # Listing / search
 

@@ -313,6 +313,76 @@ def test_tasting_and_stats_endpoints(client):
     assert client.get("/health").json()["ok"] is True
 
 
+def test_delete_tasting_restores_bottle(conn):
+    wine = add_sample_wine(conn)
+    core.log_purchase(conn, wine["id"], 2)
+    wine = core.log_tasting(conn, wine["id"], rating=90)
+    assert wine["quantity"] == 1
+    wine = core.delete_tasting(conn, wine["tastings"][0]["id"])
+    assert wine["quantity"] == 2
+    assert wine["tastings"] == []
+    assert sum(event["delta"] for event in wine["events"]) == 2
+
+
+def test_delete_purchase_removes_bottles(conn):
+    wine = add_sample_wine(conn)
+    wine = core.log_purchase(conn, wine["id"], 3)
+    purchase_id = wine["purchases"][0]["id"]
+    wine = core.delete_purchase(conn, purchase_id)
+    assert wine["quantity"] == 0
+    assert wine["purchases"] == []
+    assert wine["events"] == []
+
+
+def test_delete_purchase_blocked_when_bottles_consumed(conn):
+    wine = add_sample_wine(conn)
+    wine = core.log_purchase(conn, wine["id"], 1)
+    core.log_tasting(conn, wine["id"], rating=90)
+    with pytest.raises(ValueError, match="already consumed"):
+        core.delete_purchase(conn, wine["purchases"][0]["id"])
+
+
+def test_delete_wine_cascades_including_photos(conn, tmp_path: Path):
+    wine = add_sample_wine(conn)
+    core.log_purchase(conn, wine["id"], 2)
+    core.log_tasting(conn, wine["id"], rating=90)
+    source = tmp_path / "label.jpg"
+    source.write_bytes(b"img")
+    photo = core.attach_photo(conn, str(source), wine_id=wine["id"])
+    stored = config.photos_dir() / photo["path"]
+    assert stored.is_file()
+
+    core.delete_wine(conn, wine["id"])
+    assert not stored.is_file()
+    for table in ("wines", "purchases", "tastings", "inventory_events", "photos"):
+        assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+
+
+def test_update_and_delete_endpoints(client):
+    wine_id = client.post(
+        "/api/cellar/items",
+        json={"producer": "P", "wine_name": "W", "quantity": 1},
+    ).json()["id"]
+
+    response = client.patch(
+        f"/api/wines/{wine_id}", json={"region": "Barolo", "wine_type": "red"}
+    )
+    assert response.status_code == 200
+    assert response.json()["region"] == "Barolo"
+    assert client.patch(f"/api/wines/{wine_id}", json={}).status_code == 400
+
+    tasting = client.post(
+        f"/api/wines/{wine_id}/tastings", json={"rating": 88}
+    ).json()["tastings"][0]
+    restored = client.delete(f"/api/tastings/{tasting['id']}")
+    assert restored.status_code == 200
+    assert restored.json()["quantity"] == 1
+    assert client.delete("/api/tastings/9999").status_code == 404
+
+    assert client.delete(f"/api/wines/{wine_id}").json()["ok"] is True
+    assert client.get(f"/api/wines/{wine_id}").status_code == 404
+
+
 def test_photo_endpoint_rejects_traversal(client, data_dir: Path):
     # A secret file next to the photos dir must not be reachable.
     (data_dir / "cellar-secret.txt").write_text("secret")

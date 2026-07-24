@@ -213,6 +213,76 @@ export function photoUrl(path: string): string {
   return `${apiBase()}/photos/${path}`
 }
 
+async function mutate<T>(
+  path: string,
+  method: 'POST' | 'PATCH' | 'DELETE',
+  body?: unknown,
+): Promise<T> {
+  const res = await fetch(`${apiBase()}${path}`, {
+    method,
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`
+    try {
+      const payload = (await res.json()) as { detail?: string }
+      if (payload.detail) detail = payload.detail
+    } catch {
+      // keep the status text
+    }
+    throw new Error(detail)
+  }
+  return (await res.json()) as T
+}
+
+export type WineUpdate = Partial<{
+  producer: string
+  wine_name: string
+  vintage: string
+  country: string
+  region: string
+  appellation: string
+  varietal: string
+  wine_type: string
+  grapes: string
+  bottle_size_ml: number
+  location: string
+  drinking_window_start: string
+  drinking_window_end: string
+  notes: string
+}>
+
+export function updateWine(
+  wineId: number,
+  fields: WineUpdate,
+): Promise<WineDossier> {
+  return mutate<WineDossier>(`/api/wines/${wineId}`, 'PATCH', fields)
+}
+
+export function deleteWine(wineId: number): Promise<{ ok: boolean }> {
+  return mutate<{ ok: boolean }>(`/api/wines/${wineId}`, 'DELETE')
+}
+
+export function deleteTasting(tastingId: number): Promise<WineDossier> {
+  return mutate<WineDossier>(`/api/tastings/${tastingId}`, 'DELETE')
+}
+
+export function deletePurchase(purchaseId: number): Promise<WineDossier> {
+  return mutate<WineDossier>(`/api/purchases/${purchaseId}`, 'DELETE')
+}
+
+export function adjustInventory(
+  wineId: number,
+  delta: number,
+  reason: string,
+): Promise<WineDossier> {
+  return mutate<WineDossier>(`/api/cellar/items/${wineId}/adjust`, 'POST', {
+    delta,
+    reason,
+  })
+}
+
 export const WINE_TYPE_OPTIONS = [
   'red',
   'white',
