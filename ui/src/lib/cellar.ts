@@ -292,6 +292,153 @@ export function adjustInventory(
   })
 }
 
+/** Fields describing a wine we tasted somewhere but never owned. */
+export type ExternalWineDraft = {
+  producer: string
+  wine_name: string
+  vintage?: string
+  wine_type?: string
+  region?: string
+  country?: string
+}
+
+/**
+ * Create a wine row with no bottles attached. Used for wines tasted elsewhere:
+ * they belong in the tasting history without ever entering the inventory, so
+ * they stay out of the default in-stock cellar view.
+ */
+export function createExternalWine(
+  draft: ExternalWineDraft,
+): Promise<WineDossier> {
+  return mutate<WineDossier>('/api/cellar/items', 'POST', {
+    ...draft,
+    quantity: 0,
+  })
+}
+
+export type TastingDraft = {
+  rating?: number | null
+  tasting_notes?: string
+  food_pairing?: string
+  context_type?: string
+  venue?: string
+  price_paid?: number | null
+  buy_again?: boolean
+  tasted_on?: string
+  consume_bottle?: boolean
+}
+
+export function logTasting(
+  wineId: number,
+  draft: TastingDraft,
+): Promise<WineDossier> {
+  return mutate<WineDossier>(`/api/wines/${wineId}/tastings`, 'POST', draft)
+}
+
+/** Raw form values for a wine tasted away from the cellar. */
+export type ExternalTastingInput = {
+  /** Set when the wine is already on file, so we extend its history instead of forking it. */
+  matchedWineId: number | null
+  producer: string
+  wine_name: string
+  vintage: string
+  wine_type: string
+  region: string
+  country: string
+  context_type: string
+  venue: string
+  tasted_on: string
+  /** Free text so the field can be left blank; validated here. */
+  rating: string
+  price_paid: string
+  buy_again: boolean
+  notes: string
+}
+
+export type ParsedExternalTasting = {
+  wineId: number | null
+  wine: ExternalWineDraft | null
+  tasting: TastingDraft
+}
+
+/**
+ * Validate and normalise the form values. Kept separate from the component so
+ * the rules are testable without mounting a router.
+ */
+export function parseExternalTasting(
+  input: ExternalTastingInput,
+): { ok: true; value: ParsedExternalTasting } | { ok: false; error: string } {
+  const ratingText = input.rating.trim()
+  const rating = ratingText ? Number(ratingText) : null
+  if (
+    rating !== null &&
+    (!Number.isInteger(rating) || rating < 0 || rating > 100)
+  ) {
+    return { ok: false, error: 'Rating must be a whole number from 0 to 100.' }
+  }
+
+  const priceText = input.price_paid.trim()
+  const price = priceText ? Number(priceText) : null
+  if (price !== null && (!Number.isFinite(price) || price < 0)) {
+    return { ok: false, error: 'Price must be a number of 0 or more.' }
+  }
+
+  const producer = input.producer.trim()
+  const wineName = input.wine_name.trim()
+  if (input.matchedWineId == null && (!producer || !wineName)) {
+    return { ok: false, error: 'Producer and wine name are required.' }
+  }
+
+  return {
+    ok: true,
+    value: {
+      wineId: input.matchedWineId,
+      wine:
+        input.matchedWineId == null
+          ? {
+              producer,
+              wine_name: wineName,
+              vintage: input.vintage.trim(),
+              wine_type: input.wine_type,
+              region: input.region.trim(),
+              country: input.country.trim(),
+            }
+          : null,
+      tasting: {
+        rating,
+        price_paid: price,
+        tasting_notes: input.notes.trim(),
+        context_type: input.context_type,
+        venue: input.venue.trim(),
+        buy_again: input.buy_again,
+        tasted_on: input.tasted_on,
+      },
+    },
+  }
+}
+
+/**
+ * Persist a tasting that happened away from the cellar, creating the wine first
+ * if we've never seen it. Inventory is never touched: `consume_bottle` is
+ * forced false here so no caller can accidentally drain a bottle we still hold.
+ */
+export async function saveExternalTasting(
+  parsed: ParsedExternalTasting,
+): Promise<WineDossier> {
+  const wineId = parsed.wineId ?? (await createExternalWine(parsed.wine!)).id
+  return logTasting(wineId, { ...parsed.tasting, consume_bottle: false })
+}
+
+/** Where a wine was tasted. Free text in the DB; these are just the common ones. */
+export const TASTING_CONTEXT_OPTIONS = [
+  'restaurant',
+  'wine bar',
+  'tasting room',
+  'friend',
+  'event',
+  'other',
+] as const
+
 export const WINE_TYPE_OPTIONS = [
   'red',
   'white',

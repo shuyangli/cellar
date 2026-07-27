@@ -13,26 +13,36 @@ const basePath = configuredBasePath
   : ''
 const viteBase = `${basePath || ''}/`
 
+// Vitest sets this. The Start plugin below wires up SSR, which resolves React
+// through the `react-server` condition — under test that yields a React without
+// a hooks dispatcher, so component renders die on the first useState.
+const isTest = process.env.VITEST === 'true'
+
 const config = defineConfig(({ command }) => ({
   base: viteBase,
   define: {
     __CELLAR_BASE_PATH__: JSON.stringify(basePath),
   },
-  resolve: { tsconfigPaths: true },
+  // dedupe keeps component tests on a single React instance.
+  resolve: { tsconfigPaths: true, dedupe: ['react', 'react-dom'] },
   plugins: [
     // devtools() hangs `vite build` (it does not respect NODE_ENV, which plain
     // `npm run build` never sets anyway); include it only when serving in dev.
-    ...(command === 'serve' ? [devtools()] : []),
+    ...(command === 'serve' && !isTest ? [devtools()] : []),
     tailwindcss(),
     // SPA mode: the build emits static files that FastAPI serves directly.
-    tanstackStart({
-      spa: {
-        enabled: true,
-        maskPath: `${basePath}/history`,
-      },
-      router: { basepath: basePath || undefined },
-      client: { base: basePath || '/' },
-    }),
+    ...(isTest
+      ? []
+      : [
+          tanstackStart({
+            spa: {
+              enabled: true,
+              maskPath: `${basePath}/history`,
+            },
+            router: { basepath: basePath || undefined },
+            client: { base: basePath || '/' },
+          }),
+        ]),
     viteReact(),
   ],
   server: {
