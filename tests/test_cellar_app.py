@@ -134,6 +134,90 @@ def test_migration_is_idempotent(data_dir: Path):
         conn.close()
 
 
+def test_records_the_compatibility_floor_on_migrate(data_dir: Path):
+    conn = db.open_db()
+    try:
+        assert db._read_min_compatible(conn) == db._required_min_compatible()
+    finally:
+        conn.close()
+
+
+def test_backfills_the_floor_into_a_database_migrated_before_tracking(data_dir: Path):
+    conn = db.open_db()
+    conn.execute("DROP TABLE schema_meta")
+    conn.commit()
+    conn.close()
+
+    conn = db.open_db()
+    try:
+        assert db._read_min_compatible(conn) == db._required_min_compatible()
+    finally:
+        conn.close()
+
+
+def test_opens_a_newer_database_when_its_migrations_stayed_additive(data_dir: Path):
+    """The bug this guards: an additive migration must not strand older code.
+
+    A branch carrying a new column upgraded the live database, and every branch
+    without that migration then refused to start.
+    """
+    conn = db.open_db()
+    # Stand in for a future additive migration run by newer code.
+    conn.execute("ALTER TABLE wines ADD COLUMN future_column TEXT")
+    conn.execute(f"PRAGMA user_version = {db.SCHEMA_VERSION + 1}")
+    db._write_min_compatible(conn, db.SCHEMA_VERSION)
+    conn.commit()
+    conn.close()
+
+    conn = db.open_db()
+    try:
+        assert core.list_inventory(conn)["pagination"]["total_items"] == 0
+        # The newer schema is left exactly as found.
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION + 1
+    finally:
+        conn.close()
+
+
+def test_refuses_a_newer_database_whose_migration_broke_compatibility(data_dir: Path):
+    conn = db.open_db()
+    conn.execute(f"PRAGMA user_version = {db.SCHEMA_VERSION + 1}")
+    # A destructive migration raises the floor above what this code provides.
+    db._write_min_compatible(conn, db.SCHEMA_VERSION + 1)
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(RuntimeError, match="requires code at schema version"):
+        db.open_db()
+
+
+def test_adopts_a_newer_database_that_predates_tracking(data_dir: Path):
+    """Every migration shipped before tracking was additive, so this is readable."""
+    conn = db.open_db()
+    conn.execute(f"PRAGMA user_version = {db.SCHEMA_VERSION + 1}")
+    conn.execute("DROP TABLE schema_meta")
+    conn.commit()
+    conn.close()
+
+    conn = db.open_db()
+    try:
+        assert core.list_inventory(conn)["pagination"]["total_items"] == 0
+    finally:
+        conn.close()
+
+
+def test_does_not_rewrite_the_floor_on_every_open(data_dir: Path):
+    """open_db runs per request; the marker must not be a write on the hot path."""
+    db.open_db().close()
+
+    conn = db.connect()
+    writes = []
+    conn.set_trace_callback(lambda statement: writes.append(statement))
+    db.migrate(conn)
+    conn.close()
+
+    assert not [w for w in writes if "INSERT INTO schema_meta" in w]
+
+
 # ---------------------------------------------------------------------------
 # Core flows
 
