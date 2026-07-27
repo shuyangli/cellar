@@ -202,7 +202,26 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
         )
 
 
-_MIGRATIONS: list[Callable[[sqlite3.Connection], None]] = [_migrate_v1, _migrate_v2]
+_V3_SCHEMA = """
+ALTER TABLE wishlist ADD COLUMN recommended_by TEXT;
+"""
+
+
+def _migrate_v3(conn: sqlite3.Connection) -> None:
+    """Wishlist entries start life as recommendations, so record who made them.
+
+    The v1 wishlist only captured shop/price — enough for "spotted this bottle
+    somewhere", but not for "a friend said to try this", which is how most
+    entries actually arrive.
+    """
+    conn.executescript(_V3_SCHEMA)
+
+
+_MIGRATIONS: list[Callable[[sqlite3.Connection], None]] = [
+    _migrate_v1,
+    _migrate_v2,
+    _migrate_v3,
+]
 SCHEMA_VERSION = len(_MIGRATIONS)
 
 

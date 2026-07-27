@@ -48,8 +48,10 @@ def _wrap(operation, *args, **kwargs) -> Any:
         return operation(*args, **kwargs)
     except ValueError as error:
         message = str(error)
-        status = 404 if message.startswith("no wine with id") else 400
-        raise HTTPException(status_code=status, detail=message) from error
+        # core raises "no <thing> with id <n>" for missing rows; everything else
+        # is a bad request.
+        missing = message.startswith("no ") and " with id " in message
+        raise HTTPException(status_code=404 if missing else 400, detail=message) from error
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +109,14 @@ class TastingCreate(BaseModel):
     buy_again: bool | None = None
     tasted_on: str = ""
     consume_bottle: bool = True
+
+
+class WishlistCreate(BaseModel):
+    wine_id: int
+    recommended_by: str = ""
+    reason: str = ""
+    shop_name: str = ""
+    listed_price: float | None = Field(default=None, ge=0)
 
 
 # ---------------------------------------------------------------------------
@@ -312,6 +322,31 @@ def api_tastings(
 @app.get("/api/wishlist")
 def api_wishlist(conn: sqlite3.Connection = Depends(get_conn)) -> list[dict[str, Any]]:
     return core.wishlist_list(conn)
+
+
+@app.post("/api/wishlist")
+def api_wishlist_add(
+    entry: WishlistCreate,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict[str, Any]:
+    return _wrap(
+        core.wishlist_add,
+        conn,
+        entry.wine_id,
+        shop_name=entry.shop_name.strip() or None,
+        listed_price=entry.listed_price,
+        reason=entry.reason.strip() or None,
+        recommended_by=entry.recommended_by.strip() or None,
+    )
+
+
+@app.delete("/api/wishlist/{wishlist_id}")
+def api_wishlist_remove(
+    wishlist_id: int,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict[str, bool]:
+    _wrap(core.wishlist_remove, conn, wishlist_id)
+    return {"ok": True}
 
 
 @app.get("/photos/{filename}")

@@ -101,6 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
     wl = p.add_subparsers(dest="wishlist_command", required=True)
     w = wl.add_parser("add")
     w.add_argument("wine_id", type=int)
+    w.add_argument("--recommended-by", default="")
     w.add_argument("--shop", default="")
     w.add_argument("--price", type=float, default=None)
     w.add_argument("--reason", default="")
@@ -225,6 +226,7 @@ def main() -> None:
                                 shop_name=args.shop or None,
                                 listed_price=args.price,
                                 reason=args.reason or None,
+                                recommended_by=args.recommended_by or None,
                             )
                         )
                     case "list":
