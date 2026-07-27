@@ -67,6 +67,25 @@ export type TastingWithWine = Tasting & {
   country: string | null
 }
 
+/** A wine we want to try or buy, joined to the wine row it points at. */
+export type WishlistEntry = {
+  id: number
+  wine_id: number
+  recommended_by: string | null
+  reason: string | null
+  shop_name: string | null
+  listed_price: number | null
+  created_at: string
+  producer: string
+  wine_name: string
+  vintage: string | null
+  wine_type: string | null
+  region: string | null
+  country: string | null
+  /** Bottles currently held — non-zero means the recommendation is already in the cellar. */
+  quantity: number
+}
+
 export type InventoryEvent = {
   id: number
   wine_id: number
@@ -213,6 +232,10 @@ export function fetchStats(): Promise<StatsPayload> {
 
 export function fetchTastings(limit = 200): Promise<Array<TastingWithWine>> {
   return fetchJson<Array<TastingWithWine>>(`/api/tastings?limit=${limit}`)
+}
+
+export function fetchWishlist(): Promise<Array<WishlistEntry>> {
+  return fetchJson<Array<WishlistEntry>>('/api/wishlist')
 }
 
 export function photoUrl(path: string): string {
@@ -427,6 +450,102 @@ export async function saveExternalTasting(
 ): Promise<WineDossier> {
   const wineId = parsed.wineId ?? (await createExternalWine(parsed.wine!)).id
   return logTasting(wineId, { ...parsed.tasting, consume_bottle: false })
+}
+
+export type WishlistDraft = {
+  wine_id: number
+  recommended_by?: string
+  reason?: string
+  shop_name?: string
+  listed_price?: number | null
+}
+
+export function addWishlistEntry(draft: WishlistDraft): Promise<WishlistEntry> {
+  return mutate<WishlistEntry>('/api/wishlist', 'POST', draft)
+}
+
+export function removeWishlistEntry(
+  wishlistId: number,
+): Promise<{ ok: boolean }> {
+  return mutate<{ ok: boolean }>(`/api/wishlist/${wishlistId}`, 'DELETE')
+}
+
+/** Raw form values for a wine someone suggested we try. */
+export type WishlistInput = {
+  /** Set when the wine is already on file, so the entry points at the known row. */
+  matchedWineId: number | null
+  producer: string
+  wine_name: string
+  vintage: string
+  wine_type: string
+  region: string
+  country: string
+  recommended_by: string
+  reason: string
+  shop_name: string
+  /** Free text so the field can be left blank; validated here. */
+  listed_price: string
+}
+
+export type ParsedWishlist = {
+  wineId: number | null
+  wine: ExternalWineDraft | null
+  entry: Omit<WishlistDraft, 'wine_id'>
+}
+
+/**
+ * Validate and normalise wishlist form values. Kept separate from the component
+ * so the rules are testable without mounting a router.
+ */
+export function parseWishlistInput(
+  input: WishlistInput,
+): { ok: true; value: ParsedWishlist } | { ok: false; error: string } {
+  const priceText = input.listed_price.trim()
+  const price = priceText ? Number(priceText) : null
+  if (price !== null && (!Number.isFinite(price) || price < 0)) {
+    return { ok: false, error: 'Price must be a number of 0 or more.' }
+  }
+
+  const producer = input.producer.trim()
+  const wineName = input.wine_name.trim()
+  if (input.matchedWineId == null && (!producer || !wineName)) {
+    return { ok: false, error: 'Producer and wine name are required.' }
+  }
+
+  return {
+    ok: true,
+    value: {
+      wineId: input.matchedWineId,
+      wine:
+        input.matchedWineId == null
+          ? {
+              producer,
+              wine_name: wineName,
+              vintage: input.vintage.trim(),
+              wine_type: input.wine_type,
+              region: input.region.trim(),
+              country: input.country.trim(),
+            }
+          : null,
+      entry: {
+        recommended_by: input.recommended_by.trim(),
+        reason: input.reason.trim(),
+        shop_name: input.shop_name.trim(),
+        listed_price: price,
+      },
+    },
+  }
+}
+
+/**
+ * Persist a wishlist entry, creating the wine first if we've never seen it. The
+ * wine is created with quantity 0 so wanting a bottle never implies owning one.
+ */
+export async function saveWishlistEntry(
+  parsed: ParsedWishlist,
+): Promise<WishlistEntry> {
+  const wineId = parsed.wineId ?? (await createExternalWine(parsed.wine!)).id
+  return addWishlistEntry({ ...parsed.entry, wine_id: wineId })
 }
 
 /** Where a wine was tasted. Free text in the DB; these are just the common ones. */

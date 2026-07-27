@@ -9,12 +9,18 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WishlistRouteImport } from './routes/wishlist'
 import { Route as StatsRouteImport } from './routes/stats'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as DrinkNowRouteImport } from './routes/drink-now'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WineWineIdRouteImport } from './routes/wine.$wineId'
 
+const WishlistRoute = WishlistRouteImport.update({
+  id: '/wishlist',
+  path: '/wishlist',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StatsRoute = StatsRouteImport.update({
   id: '/stats',
   path: '/stats',
@@ -46,6 +52,7 @@ export interface FileRoutesByFullPath {
   '/drink-now': typeof DrinkNowRoute
   '/history': typeof HistoryRoute
   '/stats': typeof StatsRoute
+  '/wishlist': typeof WishlistRoute
   '/wine/$wineId': typeof WineWineIdRoute
 }
 export interface FileRoutesByTo {
@@ -53,6 +60,7 @@ export interface FileRoutesByTo {
   '/drink-now': typeof DrinkNowRoute
   '/history': typeof HistoryRoute
   '/stats': typeof StatsRoute
+  '/wishlist': typeof WishlistRoute
   '/wine/$wineId': typeof WineWineIdRoute
 }
 export interface FileRoutesById {
@@ -61,14 +69,28 @@ export interface FileRoutesById {
   '/drink-now': typeof DrinkNowRoute
   '/history': typeof HistoryRoute
   '/stats': typeof StatsRoute
+  '/wishlist': typeof WishlistRoute
   '/wine/$wineId': typeof WineWineIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/drink-now' | '/history' | '/stats' | '/wine/$wineId'
+  fullPaths:
+    | '/'
+    | '/drink-now'
+    | '/history'
+    | '/stats'
+    | '/wishlist'
+    | '/wine/$wineId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/drink-now' | '/history' | '/stats' | '/wine/$wineId'
-  id: '__root__' | '/' | '/drink-now' | '/history' | '/stats' | '/wine/$wineId'
+  to: '/' | '/drink-now' | '/history' | '/stats' | '/wishlist' | '/wine/$wineId'
+  id:
+    | '__root__'
+    | '/'
+    | '/drink-now'
+    | '/history'
+    | '/stats'
+    | '/wishlist'
+    | '/wine/$wineId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -76,11 +98,19 @@ export interface RootRouteChildren {
   DrinkNowRoute: typeof DrinkNowRoute
   HistoryRoute: typeof HistoryRoute
   StatsRoute: typeof StatsRoute
+  WishlistRoute: typeof WishlistRoute
   WineWineIdRoute: typeof WineWineIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/wishlist': {
+      id: '/wishlist'
+      path: '/wishlist'
+      fullPath: '/wishlist'
+      preLoaderRoute: typeof WishlistRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/stats': {
       id: '/stats'
       path: '/stats'
@@ -124,6 +154,7 @@ const rootRouteChildren: RootRouteChildren = {
   DrinkNowRoute: DrinkNowRoute,
   HistoryRoute: HistoryRoute,
   StatsRoute: StatsRoute,
+  WishlistRoute: WishlistRoute,
   WineWineIdRoute: WineWineIdRoute,
 }
 export const routeTree = rootRouteImport

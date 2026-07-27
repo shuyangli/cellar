@@ -81,7 +81,7 @@ hermes mcp test cellar
 Tools: `find_wine`, `add_wine`, `update_wine`, `log_purchase`, `log_tasting`,
 `adjust_inventory`, `get_wine`, `list_inventory`, `cellar_stats`,
 `drinking_window_alerts`, `attach_photo`, `wishlist_add`, `wishlist_list`,
-`query` (read-only SQL). Conventions: ISO dates, ratings 0-100, prices per
+`wishlist_remove`, `query` (read-only SQL). Conventions: ISO dates, ratings 0-100, prices per
 bottle. See `docs/hermes-cellar-manager.md` for the recommended agent
 instructions (dedupe with `find_wine` before adding, enrich before logging).
 
@@ -106,7 +106,8 @@ Original endpoints (kept): `GET /api/cellar`, `POST /api/cellar/items`,
 
 Added: `GET /api/wines/{id}` (full dossier), `POST /api/wines/{id}/purchases`,
 `POST /api/wines/{id}/tastings`, `GET /api/stats`, `GET /api/drink-now`,
-`GET /api/tastings`, `GET /api/wishlist`, `GET /photos/{filename}`.
+`GET /api/tastings`, `GET /api/wishlist`, `POST /api/wishlist`,
+`DELETE /api/wishlist/{id}`, `GET /photos/{filename}`.
 
 ## UI development
 

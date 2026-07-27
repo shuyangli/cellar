@@ -749,22 +749,32 @@ def wishlist_add(
     shop_name: str | None = None,
     listed_price: float | None = None,
     reason: str | None = None,
+    recommended_by: str | None = None,
 ) -> dict[str, Any]:
     if conn.execute("SELECT 1 FROM wines WHERE id = ?", (wine_id,)).fetchone() is None:
         raise ValueError(f"no wine with id {wine_id}")
     cursor = conn.execute(
-        "INSERT INTO wishlist (wine_id, shop_name, listed_price, reason) VALUES (?, ?, ?, ?)",
-        (wine_id, shop_name, listed_price, reason),
+        """
+        INSERT INTO wishlist (wine_id, shop_name, listed_price, reason, recommended_by)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (wine_id, shop_name, listed_price, reason, recommended_by),
     )
     conn.commit()
     return _row(conn.execute("SELECT * FROM wishlist WHERE id = ?", (cursor.lastrowid,)).fetchone())
 
 
 def wishlist_list(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Wishlist entries, newest first, with enough wine detail to render a row.
+
+    ``quantity`` rides along so callers can flag entries for wine already in the
+    cellar — a recommendation often names something we turn out to own.
+    """
     return _rows(
         conn.execute(
             """
-            SELECT wl.*, w.producer, w.wine_name, w.vintage
+            SELECT wl.*, w.producer, w.wine_name, w.vintage, w.wine_type,
+                   w.region, w.country, w.quantity
             FROM wishlist wl JOIN wines w ON w.id = wl.wine_id
             ORDER BY wl.created_at DESC
             """
@@ -773,5 +783,7 @@ def wishlist_list(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 
 def wishlist_remove(conn: sqlite3.Connection, wishlist_id: int) -> None:
-    conn.execute("DELETE FROM wishlist WHERE id = ?", (wishlist_id,))
+    cursor = conn.execute("DELETE FROM wishlist WHERE id = ?", (wishlist_id,))
+    if cursor.rowcount == 0:
+        raise ValueError(f"no wishlist entry with id {wishlist_id}")
     conn.commit()

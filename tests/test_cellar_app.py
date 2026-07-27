@@ -444,3 +444,66 @@ def test_connection_supports_fastapi_worker_thread_handoffs(tmp_path: Path) -> N
     conn.close()
 
     assert errors == []
+
+
+def test_wishlist_round_trip_with_recommender(conn):
+    wine = add_sample_wine(conn)
+    entry = core.wishlist_add(
+        conn,
+        wine["id"],
+        recommended_by="Alex",
+        reason="Said it drinks like grand cru for half the price",
+    )
+    assert entry["recommended_by"] == "Alex"
+
+    listed = core.wishlist_list(conn)
+    assert len(listed) == 1
+    # The join must carry enough wine detail to render a row without a second fetch.
+    assert listed[0]["producer"] == wine["producer"]
+    assert listed[0]["quantity"] == 0
+    assert listed[0]["recommended_by"] == "Alex"
+
+    core.wishlist_remove(conn, entry["id"])
+    assert core.wishlist_list(conn) == []
+
+
+def test_wishlist_rejects_unknown_wine_and_entry(conn):
+    with pytest.raises(ValueError, match="no wine with id"):
+        core.wishlist_add(conn, 9999, recommended_by="Nobody")
+    with pytest.raises(ValueError, match="no wishlist entry with id"):
+        core.wishlist_remove(conn, 9999)
+
+
+def test_wishlist_endpoints(client):
+    wine_id = client.post(
+        "/api/cellar/items",
+        json={"producer": "Overnoy", "wine_name": "Ploussard", "quantity": 0},
+    ).json()["id"]
+
+    created = client.post(
+        "/api/wishlist",
+        json={
+            "wine_id": wine_id,
+            "recommended_by": "  Marta  ",
+            "reason": "Poured it at dinner",
+            "listed_price": 62.0,
+        },
+    )
+    assert created.status_code == 200
+    assert created.json()["recommended_by"] == "Marta"
+
+    entries = client.get("/api/wishlist").json()
+    assert len(entries) == 1
+    assert entries[0]["wine_name"] == "Ploussard"
+    assert entries[0]["listed_price"] == 62.0
+
+    # Wanting a bottle must not imply owning one.
+    assert client.get("/api/cellar").json()["pagination"]["total_items"] == 0
+
+    assert client.delete(f"/api/wishlist/{entries[0]['id']}").status_code == 200
+    assert client.get("/api/wishlist").json() == []
+
+
+def test_wishlist_endpoint_reports_missing_rows(client):
+    assert client.post("/api/wishlist", json={"wine_id": 4242}).status_code == 404
+    assert client.delete("/api/wishlist/4242").status_code == 404

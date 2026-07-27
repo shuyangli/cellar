@@ -295,27 +295,41 @@ def attach_photo(
 def wishlist_add(
     conn,
     wine_id: int,
+    recommended_by: str = "",
+    reason: str = "",
     shop_name: str = "",
     listed_price: float | None = None,
-    reason: str = "",
 ) -> dict[str, Any]:
-    """Add a wine to the wishlist (add_wine it first if new — a wishlist entry
-    references a wine with zero stock). Use when the owner spots something worth
-    buying later."""
+    """Add a wine to the wishlist — something to try or buy later (add_wine it
+    first if new, with quantity 0, since a wishlist entry references a wine row).
+    Use when someone recommends a wine (set recommended_by to who suggested it
+    and reason to what they said) or when the owner spots a bottle worth buying
+    (set shop_name and listed_price)."""
     return core.wishlist_add(
         conn,
         wine_id,
         shop_name=shop_name or None,
         listed_price=listed_price,
         reason=reason or None,
+        recommended_by=recommended_by or None,
     )
 
 
 @mcp.tool()
 @_with_db
 def wishlist_list(conn) -> list[dict[str, Any]]:
-    """List wishlist entries with wine identification."""
+    """List wishlist entries — wines we want to try or buy — newest first, with
+    wine identification, who recommended each one, and current cellar quantity."""
     return core.wishlist_list(conn)
+
+
+@mcp.tool()
+@_with_db
+def wishlist_remove(conn, wishlist_id: int) -> dict[str, bool]:
+    """Remove a wishlist entry by its id (use wishlist_list to find it). Do this
+    once the wine has been bought or the owner no longer wants it."""
+    core.wishlist_remove(conn, wishlist_id)
+    return {"ok": True}
 
 
 @mcp.tool()
