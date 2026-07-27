@@ -25,7 +25,29 @@ export type CellarItem = {
   last_event_reason: string | null
   updated_at: string | null
   avg_rating: number | null
+  ratings: Array<RatingByUser>
   label_photo: string | null
+}
+
+/** One reviewer's rating of one wine — rendered as "89S". */
+export type RatingByUser = {
+  user_id: number | null
+  user_name: string | null
+  initials: string
+  rating: number
+  /** How many tastings the rating averages over. */
+  tastings: number
+}
+
+/** A person who reviews wine. Anyone can be added just by naming them. */
+export type User = {
+  id: number
+  name: string
+  is_default: number
+  /** Shortest fragment of the name unique among reviewers; the rating suffix. */
+  initials: string
+  tasting_count: number
+  last_tasted_on: string | null
 }
 
 export type Purchase = {
@@ -46,6 +68,7 @@ export type Tasting = {
   wine_id: number
   user_id: number | null
   user_name: string | null
+  user_initials: string
   context_type: string
   venue: string | null
   price_paid: number | null
@@ -230,6 +253,10 @@ export function fetchStats(): Promise<StatsPayload> {
   return fetchJson<StatsPayload>('/api/stats')
 }
 
+export function fetchUsers(): Promise<Array<User>> {
+  return fetchJson<Array<User>>('/api/users')
+}
+
 export function fetchTastings(limit = 200): Promise<Array<TastingWithWine>> {
   return fetchJson<Array<TastingWithWine>>(`/api/tastings?limit=${limit}`)
 }
@@ -340,6 +367,8 @@ export function createExternalWine(
 }
 
 export type TastingDraft = {
+  /** Reviewer name or id. A name that's new creates that reviewer. */
+  user?: string | number | null
   rating?: number | null
   tasting_notes?: string
   food_pairing?: string
@@ -368,6 +397,8 @@ export type ExternalTastingInput = {
   wine_type: string
   region: string
   country: string
+  /** Who is rating it. Blank means the default reviewer. */
+  user: string
   context_type: string
   venue: string
   tasted_on: string
@@ -428,6 +459,7 @@ export function parseExternalTasting(
             }
           : null,
       tasting: {
+        user: input.user.trim() || null,
         rating,
         price_paid: price,
         tasting_notes: input.notes.trim(),

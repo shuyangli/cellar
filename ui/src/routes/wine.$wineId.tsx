@@ -1,4 +1,9 @@
-import { createFileRoute, Link, useNavigate, useRouter } from '@tanstack/react-router'
+import {
+  createFileRoute,
+  Link,
+  useNavigate,
+  useRouter,
+} from '@tanstack/react-router'
 import { useState } from 'react'
 
 import {
@@ -17,6 +22,7 @@ import {
   TableRow,
 } from '#/components/ui/table'
 import { Badge } from '#/components/ui/badge'
+import { RatingBadge, RatingBadges } from '#/components/rating-badge'
 import { Button } from '#/components/ui/button'
 import {
   adjustInventory,
@@ -57,7 +63,9 @@ function WinePage() {
 
   const onAdjust = (delta: number) => {
     const reason = window.prompt(
-      delta > 0 ? 'Reason for adding a bottle?' : 'Reason for removing a bottle?',
+      delta > 0
+        ? 'Reason for adding a bottle?'
+        : 'Reason for removing a bottle?',
       delta > 0 ? 'manual correction' : 'manual correction',
     )
     if (reason === null) return
@@ -125,9 +133,14 @@ function WinePage() {
                   {wine.wine_type}
                 </Badge>
               ) : null}
-              {wine.varietal ? <Badge variant="secondary">{wine.varietal}</Badge> : null}
-              {wine.avg_rating != null ? (
-                <Badge className="tabular-nums">{wine.avg_rating} avg</Badge>
+              {wine.varietal ? (
+                <Badge variant="secondary">{wine.varietal}</Badge>
+              ) : null}
+              <RatingBadges ratings={wine.ratings} />
+              {wine.ratings.length > 1 && wine.avg_rating != null ? (
+                <Badge variant="outline" className="tabular-nums">
+                  {wine.avg_rating} avg
+                </Badge>
               ) : null}
             </div>
           </div>
@@ -141,11 +154,7 @@ function WinePage() {
           </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            disabled={wine.quantity < 1}
-            onClick={onMarkDrunk}
-          >
+          <Button size="sm" disabled={wine.quantity < 1} onClick={onMarkDrunk}>
             Mark drunk
           </Button>
           <Button variant="outline" size="sm" onClick={() => onAdjust(1)}>
@@ -281,19 +290,27 @@ function EditCard({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={onSubmit} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <form
+          onSubmit={onSubmit}
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+        >
           {EDIT_FIELDS.map((field) => (
             <label
               key={field.key}
               className={`flex flex-col gap-1 ${field.span ? 'sm:col-span-2' : ''}`}
             >
-              <span className="text-xs text-muted-foreground">{field.label}</span>
+              <span className="text-xs text-muted-foreground">
+                {field.label}
+              </span>
               {field.type === 'select' ? (
                 <select
                   className={inputClass}
                   value={draft[field.key] ?? ''}
                   onChange={(event) =>
-                    setDraft((value) => ({ ...value, [field.key]: event.target.value }))
+                    setDraft((value) => ({
+                      ...value,
+                      [field.key]: event.target.value,
+                    }))
                   }
                 >
                   <option value="">—</option>
@@ -308,7 +325,10 @@ function EditCard({
                   className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   value={draft[field.key] ?? ''}
                   onChange={(event) =>
-                    setDraft((value) => ({ ...value, [field.key]: event.target.value }))
+                    setDraft((value) => ({
+                      ...value,
+                      [field.key]: event.target.value,
+                    }))
                   }
                 />
               ) : (
@@ -317,7 +337,10 @@ function EditCard({
                   className={inputClass}
                   value={draft[field.key] ?? ''}
                   onChange={(event) =>
-                    setDraft((value) => ({ ...value, [field.key]: event.target.value }))
+                    setDraft((value) => ({
+                      ...value,
+                      [field.key]: event.target.value,
+                    }))
                   }
                 />
               )}
@@ -360,17 +383,26 @@ function FactsCard({ wine }: { wine: WineDossier }) {
           <Fact label="Region" value={wine.region} />
           <Fact label="Appellation" value={wine.appellation} />
           <Fact label="Grapes" value={wine.grapes || wine.varietal} />
-          <Fact label="Bottle size" value={wine.bottle_size_ml ? `${wine.bottle_size_ml} mL` : null} />
+          <Fact
+            label="Bottle size"
+            value={wine.bottle_size_ml ? `${wine.bottle_size_ml} mL` : null}
+          />
           <Fact label="Drinking window" value={drinkingWindow} />
           <Fact label="Location" value={wine.location} />
           <Fact
             label="Last paid"
-            value={wine.acquired_price != null ? `$${wine.acquired_price.toFixed(2)}` : null}
+            value={
+              wine.acquired_price != null
+                ? `$${wine.acquired_price.toFixed(2)}`
+                : null
+            }
           />
           <Fact label="Last vendor" value={wine.acquired_from} />
         </dl>
         {wine.notes ? (
-          <p className="mt-4 border-t pt-3 text-sm text-muted-foreground">{wine.notes}</p>
+          <p className="mt-4 border-t pt-3 text-sm text-muted-foreground">
+            {wine.notes}
+          </p>
         ) : null}
       </CardContent>
     </Card>
@@ -385,7 +417,12 @@ function PhotosCard({ wine }: { wine: WineDossier }) {
       </CardHeader>
       <CardContent className="flex flex-wrap gap-3">
         {wine.photos.map((photo) => (
-          <a key={photo.id} href={photoUrl(photo.path)} target="_blank" rel="noreferrer">
+          <a
+            key={photo.id}
+            href={photoUrl(photo.path)}
+            target="_blank"
+            rel="noreferrer"
+          >
             <img
               src={photoUrl(photo.path)}
               alt={photo.kind}
@@ -432,7 +469,11 @@ function TastingsCard({
             <div key={tasting.id} className="rounded-md border p-3">
               <div className="flex flex-wrap items-center gap-2">
                 {tasting.rating != null ? (
-                  <Badge className="tabular-nums">{tasting.rating}</Badge>
+                  <RatingBadge
+                    rating={tasting.rating}
+                    initials={tasting.user_initials}
+                    title={tasting.user_name ?? 'Unknown'}
+                  />
                 ) : null}
                 <span className="text-sm font-medium">
                   {tasting.user_name ?? 'Unknown'}
@@ -515,7 +556,9 @@ function PurchasesCard({
                   <TableCell className="px-4 tabular-nums">
                     {purchase.purchase_date ?? '—'}
                   </TableCell>
-                  <TableCell className="tabular-nums">{purchase.quantity}</TableCell>
+                  <TableCell className="tabular-nums">
+                    {purchase.quantity}
+                  </TableCell>
                   <TableCell className="tabular-nums">
                     {purchase.price_per_bottle != null
                       ? `$${purchase.price_per_bottle.toFixed(2)}`

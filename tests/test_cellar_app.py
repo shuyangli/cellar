@@ -507,3 +507,104 @@ def test_wishlist_endpoints(client):
 def test_wishlist_endpoint_reports_missing_rows(client):
     assert client.post("/api/wishlist", json={"wine_id": 4242}).status_code == 404
     assert client.delete("/api/wishlist/4242").status_code == 404
+
+
+def test_assign_initials_disambiguates_collisions():
+    # Distinct first letters stay single letters.
+    assert core.assign_initials(["Shuyang", "Alex"]) == {"Shuyang": "S", "Alex": "A"}
+    # A colliding name forces both to grow only as far as they must.
+    assert core.assign_initials(["Shuyang", "Alex", "Sam"]) == {
+        "Shuyang": "Sh",
+        "Alex": "A",
+        "Sam": "Sa",
+    }
+    # A name that is a prefix of another keeps its whole self; the longer grows.
+    assert core.assign_initials(["Sam", "Samuel"]) == {"Sam": "Sam", "Samuel": "Samu"}
+    # Case differences must not read as distinct people.
+    assert core.assign_initials(["shuyang", "Sam"]) == {"shuyang": "Sh", "Sam": "Sa"}
+    assert core.assign_initials([""]) == {"": "?"}
+    assert core.assign_initials([]) == {}
+
+
+def test_ratings_are_attributed_per_reviewer(conn):
+    wine = add_sample_wine(conn)
+    core.log_purchase(conn, wine["id"], 3)
+    core.log_tasting(conn, wine["id"], user="Shuyang", rating=89)
+    core.log_tasting(conn, wine["id"], user="Alex", rating=90)
+
+    dossier = core.get_wine(conn, wine["id"])
+    rendered = {entry["initials"]: entry["rating"] for entry in dossier["ratings"]}
+    assert rendered == {"S": 89.0, "A": 90.0}
+    assert dossier["avg_rating"] == 89.5
+    # Each tasting carries its own reviewer's initials for the history list.
+    assert {t["user_initials"] for t in dossier["tastings"]} == {"S", "A"}
+
+
+def test_rating_breakdown_averages_repeat_tastings_per_reviewer(conn):
+    wine = add_sample_wine(conn)
+    core.log_purchase(conn, wine["id"], 3)
+    core.log_tasting(conn, wine["id"], user="Alex", rating=88)
+    core.log_tasting(conn, wine["id"], user="Alex", rating=92)
+
+    [entry] = core.get_wine(conn, wine["id"])["ratings"]
+    assert entry["rating"] == 90.0
+    assert entry["tastings"] == 2
+
+
+def test_new_reviewer_shifts_initials_of_colliding_name(conn):
+    wine = add_sample_wine(conn)
+    core.log_purchase(conn, wine["id"], 2)
+    core.log_tasting(conn, wine["id"], user="Shuyang", rating=89)
+    assert core.get_wine(conn, wine["id"])["ratings"][0]["initials"] == "S"
+
+    core.log_tasting(conn, wine["id"], user="Sam", rating=85)
+    rendered = {e["user_name"]: e["initials"] for e in core.get_wine(conn, wine["id"])["ratings"]}
+    assert rendered == {"Shuyang": "Sh", "Sam": "Sa"}
+
+
+def test_list_view_carries_per_reviewer_ratings(conn):
+    wine = add_sample_wine(conn)
+    core.log_purchase(conn, wine["id"], 3)
+    core.log_tasting(conn, wine["id"], user="Shuyang", rating=89)
+    core.log_tasting(conn, wine["id"], user="Alex", rating=90)
+
+    [item] = core.list_inventory(conn)["items"]
+    assert {e["initials"]: e["rating"] for e in item["ratings"]} == {"S": 89.0, "A": 90.0}
+
+
+def test_users_endpoint_reports_initials(client):
+    wine_id = client.post(
+        "/api/cellar/items", json={"producer": "P", "wine_name": "W"}
+    ).json()["id"]
+    client.post(f"/api/wines/{wine_id}/purchases", json={"quantity": 2})
+    client.post(
+        f"/api/wines/{wine_id}/tastings",
+        json={"user": "Alex", "rating": 90, "consume_bottle": True},
+    )
+
+    users = client.get("/api/users").json()
+    by_name = {user["name"]: user for user in users}
+    assert by_name["Alex"]["initials"] == "A"
+    assert by_name["Alex"]["tasting_count"] == 1
+    # A reviewer named in a tasting is created on first use.
+    assert by_name["Shuyang"]["is_default"] == 1
+
+
+def test_tasting_endpoint_attributes_and_renders_initials(client):
+    wine_id = client.post(
+        "/api/cellar/items", json={"producer": "P", "wine_name": "W"}
+    ).json()["id"]
+    client.post(f"/api/wines/{wine_id}/purchases", json={"quantity": 3})
+    for user, rating in (("Shuyang", 89), ("Alex", 90)):
+        client.post(
+            f"/api/wines/{wine_id}/tastings",
+            json={"user": user, "rating": rating, "consume_bottle": True},
+        )
+
+    dossier = client.get(f"/api/wines/{wine_id}").json()
+    assert {e["initials"]: e["rating"] for e in dossier["ratings"]} == {
+        "S": 89.0,
+        "A": 90.0,
+    }
+    history = client.get("/api/tastings").json()
+    assert {t["user_initials"] for t in history} == {"S", "A"}
