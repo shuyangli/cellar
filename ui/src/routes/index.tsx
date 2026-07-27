@@ -1,4 +1,9 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import {
+  createFileRoute,
+  Link,
+  useNavigate,
+  useRouter,
+} from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 
 import {
@@ -19,6 +24,7 @@ import {
 import { Button } from '#/components/ui/button'
 import { Badge } from '#/components/ui/badge'
 import {
+  adjustInventory,
   DEFAULT_PAGE_SIZE,
   fetchCellar,
   PAGE_SIZE_OPTIONS,
@@ -39,13 +45,18 @@ export const Route = createFileRoute('/')({
   validateSearch: (raw): CellarSearch => {
     const rawPage = Number(raw.page)
     const rawSize = Number(raw.page_size)
-    const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1
-    const page_size = (PAGE_SIZE_OPTIONS as ReadonlyArray<number>).includes(rawSize)
+    const page =
+      Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1
+    const page_size = (PAGE_SIZE_OPTIONS as ReadonlyArray<number>).includes(
+      rawSize,
+    )
       ? (rawSize as PageSizeOption)
       : DEFAULT_PAGE_SIZE
     const q = typeof raw.q === 'string' && raw.q ? raw.q : undefined
     const wine_type =
-      typeof raw.wine_type === 'string' && raw.wine_type ? raw.wine_type : undefined
+      typeof raw.wine_type === 'string' && raw.wine_type
+        ? raw.wine_type
+        : undefined
     const all = raw.all === true || raw.all === 'true' ? true : undefined
     return { page, page_size, q, wine_type, all }
   },
@@ -112,7 +123,9 @@ function Hero({ summary }: { summary: CellarPayload['summary'] }) {
               <span className="font-heading text-lg font-semibold tabular-nums">
                 {stat.value.toLocaleString()}
               </span>
-              <span className="text-xs text-muted-foreground">{stat.label}</span>
+              <span className="text-xs text-muted-foreground">
+                {stat.label}
+              </span>
             </CardContent>
           </Card>
         ))}
@@ -161,13 +174,19 @@ function FilterBar({ search }: { search: CellarSearch }) {
         </Button>
       </form>
       <div className="flex flex-wrap items-center gap-1">
-        <TypeChip label="all types" active={!search.wine_type} onClick={() => apply({ wine_type: undefined })} />
+        <TypeChip
+          label="all types"
+          active={!search.wine_type}
+          onClick={() => apply({ wine_type: undefined })}
+        />
         {WINE_TYPE_OPTIONS.map((type) => (
           <TypeChip
             key={type}
             label={type}
             active={search.wine_type === type}
-            onClick={() => apply({ wine_type: search.wine_type === type ? undefined : type })}
+            onClick={() =>
+              apply({ wine_type: search.wine_type === type ? undefined : type })
+            }
           />
         ))}
         <TypeChip
@@ -239,7 +258,8 @@ function InventorySection({
                   <TableHead>Inventory</TableHead>
                   <TableHead>Origin</TableHead>
                   <TableHead>Drinking window</TableHead>
-                  <TableHead className="px-4">Rating</TableHead>
+                  <TableHead>Rating</TableHead>
+                  <TableHead className="px-4 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -266,11 +286,47 @@ function InventorySection({
 }
 
 function InventoryRow({ item }: { item: CellarItem }) {
+  const router = useRouter()
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const size = item.bottle_size_ml ?? 750
   const drinkingWindow =
     item.drinking_window_start || item.drinking_window_end
       ? `${item.drinking_window_start || 'now'} → ${item.drinking_window_end || 'open'}`
       : '—'
+
+  const drink = (count: number) => {
+    if (pending || count < 1 || count > item.quantity) return
+    setPending(true)
+    setError(null)
+    void (async () => {
+      try {
+        await adjustInventory(
+          item.id,
+          -count,
+          'drunk (marked in web UI)',
+          'consume',
+        )
+        await router.invalidate()
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      } finally {
+        setPending(false)
+      }
+    })()
+  }
+
+  const onDrinkAll = () => {
+    if (
+      !window.confirm(
+        `Drink all ${item.quantity} bottles of ${item.producer} ${item.wine_name}${
+          item.vintage ? ` (${item.vintage})` : ''
+        }?`,
+      )
+    )
+      return
+    drink(item.quantity)
+  }
 
   return (
     <TableRow className="align-top">
@@ -332,8 +388,10 @@ function InventoryRow({ item }: { item: CellarItem }) {
           <div className="text-muted-foreground">{item.appellation}</div>
         ) : null}
       </TableCell>
-      <TableCell className="whitespace-normal tabular-nums">{drinkingWindow}</TableCell>
-      <TableCell className="px-4 whitespace-normal">
+      <TableCell className="whitespace-normal tabular-nums">
+        {drinkingWindow}
+      </TableCell>
+      <TableCell className="whitespace-normal">
         {item.avg_rating != null ? (
           <Badge variant="secondary" className="tabular-nums">
             {item.avg_rating}
@@ -341,6 +399,36 @@ function InventoryRow({ item }: { item: CellarItem }) {
         ) : (
           <span className="text-muted-foreground">—</span>
         )}
+      </TableCell>
+      <TableCell className="px-4 whitespace-normal">
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex items-center justify-end gap-1">
+            <Button
+              size="sm"
+              disabled={pending || item.quantity < 1}
+              onClick={() => drink(1)}
+              title="Drink one bottle"
+            >
+              Drink
+            </Button>
+            {item.quantity > 1 ? (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={pending}
+                onClick={onDrinkAll}
+                title={`Drink all ${item.quantity} bottles`}
+              >
+                All
+              </Button>
+            ) : null}
+          </div>
+          {error ? (
+            <span className="text-right text-[10px] text-destructive">
+              {error}
+            </span>
+          ) : null}
+        </div>
       </TableCell>
     </TableRow>
   )
