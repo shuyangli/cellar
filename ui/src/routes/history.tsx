@@ -3,6 +3,7 @@ import { useState } from 'react'
 
 import { Card, CardContent } from '#/components/ui/card'
 import { Badge } from '#/components/ui/badge'
+import { RatingBadge } from '#/components/rating-badge'
 import { Button } from '#/components/ui/button'
 import { ExternalTastingForm } from '#/components/external-tasting-form'
 import { fetchTastings, formatWineTitle } from '#/lib/cellar'
@@ -66,7 +67,11 @@ function TastingCard({ tasting }: { tasting: TastingWithWine }) {
       <CardContent className="flex flex-col gap-1.5">
         <div className="flex flex-wrap items-center gap-2">
           {tasting.rating != null ? (
-            <Badge className="tabular-nums">{tasting.rating}</Badge>
+            <RatingBadge
+              rating={tasting.rating}
+              initials={tasting.user_initials}
+              title={tasting.user_name ?? 'Unknown'}
+            />
           ) : null}
           <Link
             to="/wine/$wineId/"

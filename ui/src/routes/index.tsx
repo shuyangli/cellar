@@ -23,6 +23,7 @@ import {
 } from '#/components/ui/table'
 import { Button } from '#/components/ui/button'
 import { Badge } from '#/components/ui/badge'
+import { RatingBadges } from '#/components/rating-badge'
 import {
   adjustInventory,
   DEFAULT_PAGE_SIZE,
@@ -392,10 +393,8 @@ function InventoryRow({ item }: { item: CellarItem }) {
         {drinkingWindow}
       </TableCell>
       <TableCell className="whitespace-normal">
-        {item.avg_rating != null ? (
-          <Badge variant="secondary" className="tabular-nums">
-            {item.avg_rating}
-          </Badge>
+        {item.ratings.length > 0 ? (
+          <RatingBadges ratings={item.ratings} />
         ) : (
           <span className="text-muted-foreground">—</span>
         )}

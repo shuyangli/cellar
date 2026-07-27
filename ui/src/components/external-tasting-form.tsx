@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Card, CardContent } from '#/components/ui/card'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
+import { ReviewerSelect } from '#/components/reviewer-select'
 import {
   fetchCellar,
   formatWineTitle,
@@ -43,6 +44,7 @@ export function ExternalTastingForm({ onDone }: { onDone: () => void }) {
   const [region, setRegion] = useState('')
   const [country, setCountry] = useState('')
 
+  const [user, setUser] = useState('')
   const [contextType, setContextType] = useState('restaurant')
   const [venue, setVenue] = useState('')
   const [tastedOn, setTastedOn] = useState(today())
@@ -86,6 +88,7 @@ export function ExternalTastingForm({ onDone }: { onDone: () => void }) {
       wine_type: wineType,
       region,
       country,
+      user,
       context_type: contextType,
       venue,
       tasted_on: tastedOn,
@@ -245,6 +248,9 @@ export function ExternalTastingForm({ onDone }: { onDone: () => void }) {
         </Field>
 
         <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Reviewer">
+            <ReviewerSelect value={user} onChange={setUser} />
+          </Field>
           <Field label="Where">
             <select
               className={inputClass}

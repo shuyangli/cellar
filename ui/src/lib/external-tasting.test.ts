@@ -14,6 +14,7 @@ function input(
     wine_type: 'white',
     region: 'Burgundy',
     country: 'France',
+    user: 'Alex',
     context_type: 'restaurant',
     venue: 'Frenchette',
     tasted_on: '2026-07-27',

@@ -15,6 +15,7 @@ import re
 import shutil
 import sqlite3
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -86,9 +87,41 @@ def resolve_user(conn: sqlite3.Connection, user: str | int | None) -> int:
     return cursor.lastrowid
 
 
+def assign_initials(names: Sequence[str]) -> dict[str, str]:
+    """Map each name to the shortest leading fragment no other name shares.
+
+    Ratings render as "89S" / "90A", so the suffix has to identify one reviewer
+    unambiguously. One letter is enough for Shuyang and Alex; add a Sam and both
+    S-names grow a letter ("Sh", "Sa") rather than silently pointing at two
+    people. A reviewer's badge can therefore change when a colliding name is
+    added — that is the point, and it beats two people sharing "S".
+    """
+    cleaned = {name: (name or "").strip() for name in names}
+    initials: dict[str, str] = {}
+    for name, text in cleaned.items():
+        if not text:
+            initials[name] = "?"
+            continue
+        others = [other for key, other in cleaned.items() if key != name and other]
+        length = 1
+        while length < len(text) and any(
+            other[:length].casefold() == text[:length].casefold() for other in others
+        ):
+            length += 1
+        initials[name] = text[:length].capitalize()
+    return initials
+
+
+def user_initials(conn: sqlite3.Connection) -> dict[int, str]:
+    """Reviewer id -> display initials, disambiguated across every known user."""
+    rows = conn.execute("SELECT id, name FROM users").fetchall()
+    by_name = assign_initials([row["name"] for row in rows])
+    return {row["id"]: by_name[row["name"]] for row in rows}
+
+
 def list_users(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    """All known reviewers with their review activity."""
-    return _rows(
+    """All known reviewers with their review activity and rating initials."""
+    users = _rows(
         conn.execute(
             """
             SELECT u.id, u.name, u.is_default,
@@ -100,6 +133,41 @@ def list_users(conn: sqlite3.Connection) -> list[dict[str, Any]]:
             """
         ).fetchall()
     )
+    initials = user_initials(conn)
+    for user in users:
+        user["initials"] = initials.get(user["id"], "?")
+    return users
+
+
+def rating_breakdown(
+    conn: sqlite3.Connection, wine_ids: Sequence[int]
+) -> dict[int, list[dict[str, Any]]]:
+    """Per-wine, per-reviewer ratings, so a wine shows "89S 90A" not one average.
+
+    Fetched for a whole page of wines at once — a per-row query would be an N+1
+    against the list view.
+    """
+    if not wine_ids:
+        return {}
+    placeholders = ",".join("?" for _ in wine_ids)
+    rows = conn.execute(
+        f"""
+        SELECT t.wine_id, t.user_id, u.name AS user_name,
+               ROUND(AVG(t.rating), 1) AS rating, COUNT(t.id) AS tastings
+        FROM tastings t LEFT JOIN users u ON u.id = t.user_id
+        WHERE t.rating IS NOT NULL AND t.wine_id IN ({placeholders})
+        GROUP BY t.wine_id, t.user_id
+        ORDER BY u.name COLLATE NOCASE
+        """,
+        tuple(wine_ids),
+    ).fetchall()
+    initials = user_initials(conn)
+    breakdown: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        entry = _row(row)
+        entry["initials"] = initials.get(entry["user_id"], "?")
+        breakdown.setdefault(entry.pop("wine_id"), []).append(entry)
+    return breakdown
 
 
 def set_tasting_user(
@@ -132,6 +200,7 @@ def get_wine(conn: sqlite3.Connection, wine_id: int) -> dict[str, Any]:
             (wine_id,),
         ).fetchall()
     )
+    initials = user_initials(conn)
     wine["tastings"] = _rows(
         conn.execute(
             """
@@ -142,6 +211,8 @@ def get_wine(conn: sqlite3.Connection, wine_id: int) -> dict[str, Any]:
             (wine_id,),
         ).fetchall()
     )
+    for tasting in wine["tastings"]:
+        tasting["user_initials"] = initials.get(tasting["user_id"], "?")
     wine["events"] = _rows(
         conn.execute(
             "SELECT * FROM inventory_events WHERE wine_id = ? ORDER BY occurred_at, id",
@@ -155,6 +226,7 @@ def get_wine(conn: sqlite3.Connection, wine_id: int) -> dict[str, Any]:
     )
     ratings = [t["rating"] for t in wine["tastings"] if t["rating"] is not None]
     wine["avg_rating"] = round(sum(ratings) / len(ratings), 1) if ratings else None
+    wine["ratings"] = rating_breakdown(conn, [wine_id]).get(wine_id, [])
     return wine
 
 
@@ -532,6 +604,9 @@ def list_inventory(
             (*params, page_size, offset),
         ).fetchall()
     )
+    breakdown = rating_breakdown(conn, [item["id"] for item in items])
+    for item in items:
+        item["ratings"] = breakdown.get(item["id"], [])
     return {
         "summary": summary(conn),
         "items": items,
@@ -579,8 +654,11 @@ def cellar_stats(conn: sqlite3.Connection) -> dict[str, Any]:
     def grouped(sql: str) -> list[dict[str, Any]]:
         return _rows(conn.execute(sql).fetchall())
 
+    initials = user_initials(conn)
+
     return {
         "summary": summary(conn),
+        "reviewers": list_users(conn),
         "by_type": grouped(
             """
             SELECT COALESCE(wine_type, 'unknown') AS wine_type,
@@ -619,16 +697,19 @@ def cellar_stats(conn: sqlite3.Connection) -> dict[str, Any]:
             GROUP BY w.id ORDER BY avg_rating DESC, tastings DESC LIMIT 15
             """
         ),
-        "recent_tastings": grouped(
-            """
-            SELECT t.id, t.wine_id, w.producer, w.wine_name, w.vintage,
-                   t.rating, t.tasted_on, u.name AS user_name
-            FROM tastings t
-            JOIN wines w ON w.id = t.wine_id
-            LEFT JOIN users u ON u.id = t.user_id
-            ORDER BY t.tasted_on DESC, t.id DESC LIMIT 10
-            """
-        ),
+        "recent_tastings": [
+            dict(row, user_initials=initials.get(row["user_id"], "?"))
+            for row in grouped(
+                """
+                SELECT t.id, t.wine_id, t.user_id, w.producer, w.wine_name, w.vintage,
+                       t.rating, t.tasted_on, u.name AS user_name
+                FROM tastings t
+                JOIN wines w ON w.id = t.wine_id
+                LEFT JOIN users u ON u.id = t.user_id
+                ORDER BY t.tasted_on DESC, t.id DESC LIMIT 10
+                """
+            )
+        ],
     }
 
 
@@ -677,7 +758,7 @@ def drinking_window_alerts(conn: sqlite3.Connection) -> dict[str, Any]:
 
 
 def tasting_history(conn: sqlite3.Connection, limit: int = 200) -> list[dict[str, Any]]:
-    return _rows(
+    rows = _rows(
         conn.execute(
             """
             SELECT t.*, u.name AS user_name,
@@ -690,6 +771,10 @@ def tasting_history(conn: sqlite3.Connection, limit: int = 200) -> list[dict[str
             (limit,),
         ).fetchall()
     )
+    initials = user_initials(conn)
+    for row in rows:
+        row["user_initials"] = initials.get(row["user_id"], "?")
+    return rows
 
 
 def read_query(conn: sqlite3.Connection, sql: str, limit: int = 200) -> list[dict[str, Any]]:

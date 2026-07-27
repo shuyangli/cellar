@@ -301,6 +301,12 @@ def api_log_tasting(
     )
 
 
+@app.get("/api/users")
+def api_users(conn: sqlite3.Connection = Depends(get_conn)) -> list[dict[str, Any]]:
+    """Reviewers plus the initials their ratings render with."""
+    return core.list_users(conn)
+
+
 @app.get("/api/stats")
 def api_stats(conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
     return core.cellar_stats(conn)
