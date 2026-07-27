@@ -9,6 +9,21 @@ Schema versions (``PRAGMA user_version``):
   and ``photos`` tables; ``tastings`` gains ``user_id``/``purchase_id``; ``wines``
   gains ``wine_type``/``grapes``. Existing stock is backfilled with synthesized
   purchase + event history so quantities stay auditable from day one.
+* ``3`` — ``wishlist`` gains ``recommended_by``.
+
+Forward compatibility
+---------------------
+
+The service runs straight from a git working tree, so a branch carrying a new
+migration can upgrade the live database and then be swapped away. Refusing to
+open any newer database would strand every other branch — a one-column addition
+would stop the service from starting at all.
+
+So each migration declares ``min_compatible``: the oldest ``SCHEMA_VERSION``
+that can still safely open the database once it has run. Additive steps keep the
+floor where it is; only a destructive step raises it. The resulting floor is
+recorded in the database, so older code can ask "am I still allowed?" instead of
+assuming the worst.
 """
 
 from __future__ import annotations
@@ -16,6 +31,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 from . import config
 
@@ -217,12 +233,67 @@ def _migrate_v3(conn: sqlite3.Connection) -> None:
     conn.executescript(_V3_SCHEMA)
 
 
-_MIGRATIONS: list[Callable[[sqlite3.Connection], None]] = [
-    _migrate_v1,
-    _migrate_v2,
-    _migrate_v3,
+class Migration(NamedTuple):
+    """One schema step, plus how far back the result stays readable.
+
+    ``min_compatible`` is the oldest ``SCHEMA_VERSION`` that can still open the
+    database once this step has run. Adding a table or a nullable column leaves
+    older code working, so those keep the floor where it was. A step that drops
+    or renames something older code reads, or that rewrites data into a shape it
+    would misread, must set this to its own version — which locks that code out
+    deliberately, with a message saying so.
+    """
+
+    run: Callable[[sqlite3.Connection], None]
+    min_compatible: int
+
+
+_MIGRATIONS: list[Migration] = [
+    Migration(_migrate_v1, min_compatible=1),
+    # Purely additive: new tables, new nullable columns, backfilled history.
+    Migration(_migrate_v2, min_compatible=1),
+    # Purely additive: one nullable column on wishlist.
+    Migration(_migrate_v3, min_compatible=1),
 ]
 SCHEMA_VERSION = len(_MIGRATIONS)
+
+# Metadata about migrations, so it is deliberately not itself migrated — it is
+# created on demand and carries no application data.
+_META_SCHEMA = """
+CREATE TABLE IF NOT EXISTS schema_meta (
+    key TEXT PRIMARY KEY,
+    value INTEGER NOT NULL
+)
+"""
+_MIN_COMPATIBLE_KEY = "min_compatible_version"
+
+
+def _required_min_compatible() -> int:
+    """The floor this code's schema imposes on whoever opens the result."""
+    return max((step.min_compatible for step in _MIGRATIONS), default=1)
+
+
+def _read_min_compatible(conn: sqlite3.Connection) -> int | None:
+    """The floor recorded in the database, or None if it predates tracking."""
+    try:
+        row = conn.execute(
+            "SELECT value FROM schema_meta WHERE key = ?", (_MIN_COMPATIBLE_KEY,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        # No schema_meta table: written before compatibility tracking existed.
+        return None
+    return None if row is None else row[0]
+
+
+def _write_min_compatible(conn: sqlite3.Connection, floor: int) -> None:
+    conn.execute(_META_SCHEMA)
+    conn.execute(
+        """
+        INSERT INTO schema_meta (key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (_MIN_COMPATIBLE_KEY, floor),
+    )
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
@@ -254,12 +325,30 @@ def _current_version(conn: sqlite3.Connection) -> int:
 def migrate(conn: sqlite3.Connection) -> None:
     version = _current_version(conn)
     if version > SCHEMA_VERSION:
-        raise RuntimeError(
-            f"Database schema version {version} is newer than this code ({SCHEMA_VERSION})"
-        )
+        floor = _read_min_compatible(conn)
+        # No recorded floor means the database predates compatibility tracking.
+        # Every migration shipped before it (v1-v3) was additive, so this code
+        # can still read the database.
+        if floor is not None and floor > SCHEMA_VERSION:
+            raise RuntimeError(
+                f"Database schema version {version} requires code at schema version "
+                f"{floor} or newer, but this code is at {SCHEMA_VERSION}. "
+                "Update to a revision containing that migration."
+            )
+        # Readable, but migrations this code has never seen own the schema from
+        # here on — so read it as found and write nothing.
+        return
+
     for index in range(version, SCHEMA_VERSION):
-        _MIGRATIONS[index](conn)
+        _MIGRATIONS[index].run(conn)
         conn.execute(f"PRAGMA user_version = {index + 1}")
+
+    # Record the floor (also backfilling databases migrated before tracking
+    # existed), but only when it would change — open_db runs per request and
+    # this is otherwise a write on every one.
+    floor = _required_min_compatible()
+    if _read_min_compatible(conn) != floor:
+        _write_min_compatible(conn, floor)
     conn.commit()
 
 
