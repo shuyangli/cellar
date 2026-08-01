@@ -4,11 +4,14 @@ import {
   Outlet,
   Scripts,
   createRootRoute,
+  useRouter,
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
+import { useEffect } from 'react'
 
 import appCss from '../styles.css?url'
+import { installResumeRefresh } from '../lib/resume-refresh'
 
 const NAV_LINKS = [
   { to: '/', label: 'Cellar' },
@@ -44,6 +47,10 @@ export const Route = createRootRoute({
 })
 
 function RootLayout() {
+  const router = useRouter()
+
+  useEffect(() => installResumeRefresh(() => router.invalidate()), [router])
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">

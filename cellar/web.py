@@ -14,11 +14,11 @@ from pathlib import Path
 from typing import Any
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Query
-from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import config, core, db
 
@@ -33,6 +33,25 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Wine Cellar", lifespan=lifespan)
+
+
+def cache_control_value(path: str, content_type: str) -> str:
+    """Return a browser cache policy suited to a frequently updated SPA."""
+    if path.startswith("/api/") or path == "/health" or content_type.startswith("text/html"):
+        return "no-store"
+    if path.startswith("/assets/"):
+        return "public, max-age=31536000, immutable"
+    return "no-cache"
+
+
+@app.middleware("http")
+async def add_cache_control(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Cache-Control"] = cache_control_value(
+        request.url.path,
+        response.headers.get("Content-Type", ""),
+    )
+    return response
 
 
 def get_conn():
