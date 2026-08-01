@@ -24,6 +24,7 @@ import {
 import { Button } from '#/components/ui/button'
 import { Badge } from '#/components/ui/badge'
 import { RatingBadges } from '#/components/rating-badge'
+import { WineTypeIcon } from '#/components/wine-type-icon'
 import {
   adjustInventory,
   DEFAULT_PAGE_SIZE,
@@ -333,6 +334,10 @@ function InventoryRow({ item }: { item: CellarItem }) {
     <TableRow className="align-top">
       <TableCell className="px-4 py-3 whitespace-normal">
         <div className="flex items-start gap-3">
+          <WineTypeIcon
+            wineType={item.wine_type}
+            className="h-10 w-8 shrink-0 text-muted-foreground"
+          />
           {item.label_photo ? (
             <img
               src={photoUrl(item.label_photo)}
