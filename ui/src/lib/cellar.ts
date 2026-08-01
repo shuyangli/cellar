@@ -44,7 +44,7 @@ export type User = {
   id: number
   name: string
   is_default: number
-  /** Shortest fragment of the name unique among reviewers; the rating suffix. */
+  /** First initial of the name; the rating suffix (e.g. "S"). */
   initials: string
   tasting_count: number
   last_tasted_on: string | null

@@ -70,6 +70,7 @@ function TastingCard({ tasting }: { tasting: TastingWithWine }) {
             <RatingBadge
               rating={tasting.rating}
               initials={tasting.user_initials}
+              name={tasting.user_name}
               title={tasting.user_name ?? 'Unknown'}
             />
           ) : null}

@@ -593,19 +593,12 @@ def test_wishlist_endpoint_reports_missing_rows(client):
     assert client.delete("/api/wishlist/4242").status_code == 404
 
 
-def test_assign_initials_disambiguates_collisions():
-    # Distinct first letters stay single letters.
+def test_assign_initials_uses_first_letter():
     assert core.assign_initials(["Shuyang", "Alex"]) == {"Shuyang": "S", "Alex": "A"}
-    # A colliding name forces both to grow only as far as they must.
-    assert core.assign_initials(["Shuyang", "Alex", "Sam"]) == {
-        "Shuyang": "Sh",
-        "Alex": "A",
-        "Sam": "Sa",
-    }
-    # A name that is a prefix of another keeps its whole self; the longer grows.
-    assert core.assign_initials(["Sam", "Samuel"]) == {"Sam": "Sam", "Samuel": "Samu"}
-    # Case differences must not read as distinct people.
-    assert core.assign_initials(["shuyang", "Sam"]) == {"shuyang": "Sh", "Sam": "Sa"}
+    # Colliding names share an initial; the UI flips the badge to the full name.
+    assert core.assign_initials(["Shuyang", "Sam"]) == {"Shuyang": "S", "Sam": "S"}
+    # A lowercase name still yields an uppercase initial.
+    assert core.assign_initials(["shuyang"]) == {"shuyang": "S"}
     assert core.assign_initials([""]) == {"": "?"}
     assert core.assign_initials([]) == {}
 
@@ -635,7 +628,7 @@ def test_rating_breakdown_averages_repeat_tastings_per_reviewer(conn):
     assert entry["tastings"] == 2
 
 
-def test_new_reviewer_shifts_initials_of_colliding_name(conn):
+def test_colliding_reviewers_share_an_initial(conn):
     wine = add_sample_wine(conn)
     core.log_purchase(conn, wine["id"], 2)
     core.log_tasting(conn, wine["id"], user="Shuyang", rating=89)
@@ -643,7 +636,7 @@ def test_new_reviewer_shifts_initials_of_colliding_name(conn):
 
     core.log_tasting(conn, wine["id"], user="Sam", rating=85)
     rendered = {e["user_name"]: e["initials"] for e in core.get_wine(conn, wine["id"])["ratings"]}
-    assert rendered == {"Shuyang": "Sh", "Sam": "Sa"}
+    assert rendered == {"Shuyang": "S", "Sam": "S"}
 
 
 def test_list_view_carries_per_reviewer_ratings(conn):

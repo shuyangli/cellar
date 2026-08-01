@@ -88,32 +88,17 @@ def resolve_user(conn: sqlite3.Connection, user: str | int | None) -> int:
 
 
 def assign_initials(names: Sequence[str]) -> dict[str, str]:
-    """Map each name to the shortest leading fragment no other name shares.
+    """Map each name to its first initial, e.g. "Shuyang" -> "S".
 
-    Ratings render as "89S" / "90A", so the suffix has to identify one reviewer
-    unambiguously. One letter is enough for Shuyang and Alex; add a Sam and both
-    S-names grow a letter ("Sh", "Sa") rather than silently pointing at two
-    people. A reviewer's badge can therefore change when a colliding name is
-    added — that is the point, and it beats two people sharing "S".
+    Ratings render as "89S" / "90A". Two reviewers can share an initial — the
+    badge is tappable in the UI to reveal the full name — so the initial is just
+    a compact default, not a unique identifier.
     """
-    cleaned = {name: (name or "").strip() for name in names}
-    initials: dict[str, str] = {}
-    for name, text in cleaned.items():
-        if not text:
-            initials[name] = "?"
-            continue
-        others = [other for key, other in cleaned.items() if key != name and other]
-        length = 1
-        while length < len(text) and any(
-            other[:length].casefold() == text[:length].casefold() for other in others
-        ):
-            length += 1
-        initials[name] = text[:length].capitalize()
-    return initials
+    return {name: ((name or "").strip()[:1].upper() or "?") for name in names}
 
 
 def user_initials(conn: sqlite3.Connection) -> dict[int, str]:
-    """Reviewer id -> display initials, disambiguated across every known user."""
+    """Reviewer id -> first initial for their rating badge."""
     rows = conn.execute("SELECT id, name FROM users").fetchall()
     by_name = assign_initials([row["name"] for row in rows])
     return {row["id"]: by_name[row["name"]] for row in rows}
