@@ -4,7 +4,8 @@ import {
   useNavigate,
   useRouter,
 } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Info } from 'lucide-react'
 
 import {
   Card,
@@ -25,6 +26,10 @@ import { Button } from '#/components/ui/button'
 import { Badge } from '#/components/ui/badge'
 import { RatingBadges } from '#/components/rating-badge'
 import { WineTypeIcon } from '#/components/wine-type-icon'
+import {
+  adjustInventoryAndRefresh,
+  mobileWineSummary,
+} from '#/lib/inventory-view'
 import {
   adjustInventory,
   DEFAULT_PAGE_SIZE,
@@ -236,6 +241,8 @@ function InventorySection({
   search: CellarSearch
   estimatedCost: number
 }) {
+  const drinkControls = useDrinkControls()
+
   return (
     <Card>
       <CardHeader className="border-b">
@@ -252,24 +259,39 @@ function InventorySection({
       </CardHeader>
       {items.length > 0 ? (
         <>
-          <CardContent className="overflow-x-auto px-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="px-4">Wine</TableHead>
-                  <TableHead>Inventory</TableHead>
-                  <TableHead>Origin</TableHead>
-                  <TableHead>Drinking window</TableHead>
-                  <TableHead>Rating</TableHead>
-                  <TableHead className="px-4 text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((item) => (
-                  <InventoryRow key={item.id} item={item} />
-                ))}
-              </TableBody>
-            </Table>
+          <CardContent className="px-0">
+            <div className="divide-y md:hidden">
+              {items.map((item) => (
+                <MobileInventoryRow
+                  key={item.id}
+                  item={item}
+                  drinkControls={drinkControls}
+                />
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="px-4">Wine</TableHead>
+                    <TableHead>Inventory</TableHead>
+                    <TableHead>Origin</TableHead>
+                    <TableHead>Drinking window</TableHead>
+                    <TableHead>Rating</TableHead>
+                    <TableHead className="px-4 text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((item) => (
+                    <InventoryRow
+                      key={item.id}
+                      item={item}
+                      drinkControls={drinkControls}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
           <PaginationFooter pagination={pagination} search={search} />
         </>
@@ -287,48 +309,238 @@ function InventorySection({
   )
 }
 
-function InventoryRow({ item }: { item: CellarItem }) {
+type DrinkControls = {
+  drink: (item: CellarItem, count: number) => void
+  drinkAll: (item: CellarItem) => void
+  errors: ReadonlyMap<number, string>
+  pendingIds: ReadonlySet<number>
+}
+
+function useDrinkControls(): DrinkControls {
   const router = useRouter()
-  const [pending, setPending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const pendingIdsRef = useRef(new Set<number>())
+  const [pendingIds, setPendingIds] = useState<ReadonlySet<number>>(new Set())
+  const [errors, setErrors] = useState<ReadonlyMap<number, string>>(new Map())
+
+  const drink = useCallback(
+    (item: CellarItem, count: number) => {
+      if (
+        pendingIdsRef.current.has(item.id) ||
+        count < 1 ||
+        count > item.quantity
+      )
+        return
+      pendingIdsRef.current.add(item.id)
+      setPendingIds(new Set(pendingIdsRef.current))
+      setErrors((current) => {
+        const next = new Map(current)
+        next.delete(item.id)
+        return next
+      })
+      void (async () => {
+        const clearPending = () => {
+          pendingIdsRef.current.delete(item.id)
+          setPendingIds(new Set(pendingIdsRef.current))
+        }
+        const outcome = await adjustInventoryAndRefresh(
+          () =>
+            adjustInventory(
+              item.id,
+              -count,
+              'drunk (marked in web UI)',
+              'consume',
+            ),
+          () => router.invalidate(),
+        )
+
+        if (outcome.kind === 'mutation_failed') {
+          setErrors((current) => new Map(current).set(item.id, outcome.message))
+          clearPending()
+        } else if (outcome.kind === 'refreshed') {
+          clearPending()
+        } else {
+          setErrors((current) =>
+            new Map(current).set(
+              item.id,
+              'Bottle count updated, but the list could not refresh. Reload this page before making another change.',
+            ),
+          )
+          // Keep this wine disabled while its displayed quantity may be stale.
+        }
+      })()
+    },
+    [router],
+  )
+
+  const drinkAll = useCallback(
+    (item: CellarItem) => {
+      if (
+        !window.confirm(
+          `Drink all ${item.quantity} bottles of ${item.producer} ${item.wine_name}${
+            item.vintage ? ` (${item.vintage})` : ''
+          }?`,
+        )
+      )
+        return
+      drink(item, item.quantity)
+    },
+    [drink],
+  )
+
+  return { drink, drinkAll, errors, pendingIds }
+}
+
+function MobileInventoryRow({
+  item,
+  drinkControls,
+}: {
+  item: CellarItem
+  drinkControls: DrinkControls
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const { drink, drinkAll, errors, pendingIds } = drinkControls
+  const error = errors.get(item.id)
+  const pending = pendingIds.has(item.id)
   const size = item.bottle_size_ml ?? 750
+  const summary = mobileWineSummary(item)
+  const origin = [item.country, item.region, item.appellation]
+    .filter(Boolean)
+    .join(' · ')
   const drinkingWindow =
     item.drinking_window_start || item.drinking_window_end
       ? `${item.drinking_window_start || 'now'} → ${item.drinking_window_end || 'open'}`
       : '—'
 
-  const drink = (count: number) => {
-    if (pending || count < 1 || count > item.quantity) return
-    setPending(true)
-    setError(null)
-    void (async () => {
-      try {
-        await adjustInventory(
-          item.id,
-          -count,
-          'drunk (marked in web UI)',
-          'consume',
-        )
-        await router.invalidate()
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause))
-      } finally {
-        setPending(false)
-      }
-    })()
-  }
+  return (
+    <article className="px-4 py-3">
+      <div className="flex min-h-12 items-center gap-3">
+        <WineTypeIcon
+          wineType={item.wine_type}
+          className="h-9 w-7 shrink-0 text-muted-foreground"
+        />
+        <div className="min-w-0 flex-1">
+          <Link
+            to="/wine/$wineId/"
+            params={{ wineId: String(item.id) }}
+            className="block truncate text-sm font-medium hover:underline"
+          >
+            {item.producer} — {item.wine_name}
+          </Link>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {summary}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-col items-end gap-1">
+            <span className="text-sm font-semibold tabular-nums">
+              {item.quantity}×
+            </span>
+            {item.ratings.length > 0 ? (
+              <RatingBadges ratings={item.ratings} />
+            ) : null}
+          </div>
+          <button
+            type="button"
+            aria-label={`More information about ${item.producer} ${item.wine_name}`}
+            aria-expanded={expanded}
+            aria-controls={`mobile-wine-details-${item.id}`}
+            onClick={() => setExpanded((value) => !value)}
+            className="flex size-11 items-center justify-center rounded-full border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground"
+          >
+            <Info className="size-4" />
+          </button>
+        </div>
+      </div>
 
-  const onDrinkAll = () => {
-    if (
-      !window.confirm(
-        `Drink all ${item.quantity} bottles of ${item.producer} ${item.wine_name}${
-          item.vintage ? ` (${item.vintage})` : ''
-        }?`,
-      )
-    )
-      return
-    drink(item.quantity)
-  }
+      {expanded ? (
+        <div
+          id={`mobile-wine-details-${item.id}`}
+          className="mt-3 border-t pt-3 text-xs"
+        >
+          <dl className="grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-2">
+            <dt className="text-muted-foreground">Wine</dt>
+            <dd>
+              {item.producer} — {item.wine_name}
+              {item.vintage ? ` (${item.vintage})` : ''}
+            </dd>
+            <dt className="text-muted-foreground">Style</dt>
+            <dd className="capitalize">
+              {[item.wine_type, item.varietal].filter(Boolean).join(' · ') ||
+                '—'}
+            </dd>
+            <dt className="text-muted-foreground">Inventory</dt>
+            <dd className="tabular-nums">
+              {item.quantity} × {size} mL
+            </dd>
+            <dt className="text-muted-foreground">Acquired</dt>
+            <dd>
+              {item.acquired_price != null
+                ? `$${item.acquired_price.toFixed(2)} each`
+                : 'Price unknown'}
+              {item.acquired_from ? ` · ${item.acquired_from}` : ''}
+            </dd>
+            <dt className="text-muted-foreground">Origin</dt>
+            <dd>{origin || '—'}</dd>
+            <dt className="text-muted-foreground">Drink</dt>
+            <dd className="tabular-nums">{drinkingWindow}</dd>
+          </dl>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <Link
+              to="/wine/$wineId/"
+              params={{ wineId: String(item.id) }}
+              className="text-muted-foreground underline underline-offset-4"
+            >
+              Full details
+            </Link>
+            <div className="flex items-center gap-1">
+              <Button
+                size="sm"
+                disabled={pending || item.quantity < 1}
+                onClick={() => drink(item, 1)}
+              >
+                Drink one
+              </Button>
+              {item.quantity > 1 ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={pending}
+                  onClick={() => drinkAll(item)}
+                >
+                  Drink all
+                </Button>
+              ) : null}
+            </div>
+          </div>
+          {error ? (
+            <p
+              role="status"
+              className="mt-2 text-right text-[10px] text-destructive"
+            >
+              {error}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </article>
+  )
+}
+
+function InventoryRow({
+  item,
+  drinkControls,
+}: {
+  item: CellarItem
+  drinkControls: DrinkControls
+}) {
+  const { drink, drinkAll, errors, pendingIds } = drinkControls
+  const error = errors.get(item.id)
+  const pending = pendingIds.has(item.id)
+  const size = item.bottle_size_ml ?? 750
+  const drinkingWindow =
+    item.drinking_window_start || item.drinking_window_end
+      ? `${item.drinking_window_start || 'now'} → ${item.drinking_window_end || 'open'}`
+      : '—'
 
   return (
     <TableRow className="align-top">
@@ -410,7 +622,7 @@ function InventoryRow({ item }: { item: CellarItem }) {
             <Button
               size="sm"
               disabled={pending || item.quantity < 1}
-              onClick={() => drink(1)}
+              onClick={() => drink(item, 1)}
               title="Drink one bottle"
             >
               Drink
@@ -420,7 +632,7 @@ function InventoryRow({ item }: { item: CellarItem }) {
                 variant="outline"
                 size="sm"
                 disabled={pending}
-                onClick={onDrinkAll}
+                onClick={() => drinkAll(item)}
                 title={`Drink all ${item.quantity} bottles`}
               >
                 All
