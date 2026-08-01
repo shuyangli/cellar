@@ -24,6 +24,9 @@ describe('DrinkingWindow', () => {
     expect(screen.getByText('2020').className).toContain('opacity-50')
     expect(screen.getByText('2032').className).toContain('text-amber')
     expect(screen.getByText('to').className).toContain('sr-only')
+    expect(screen.getByText('2020').parentElement?.className).toContain(
+      'whitespace-nowrap',
+    )
   })
 
   it('renders open-ended windows without inventing a year', () => {

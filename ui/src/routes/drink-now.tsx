@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 
 import {
   Card,
@@ -8,7 +8,7 @@ import {
   CardTitle,
 } from '#/components/ui/card'
 import { Badge } from '#/components/ui/badge'
-import { DrinkingWindow } from '#/components/drinking-window'
+import { DrinkNowWineRow } from '#/components/drink-now-wine-row'
 import { fetchDrinkNow } from '#/lib/cellar'
 import type { CellarItem } from '#/lib/cellar'
 
@@ -111,38 +111,7 @@ function WindowSection({
       </CardHeader>
       <CardContent className="flex flex-col divide-y">
         {items.map((item) => (
-          <div
-            key={item.id}
-            className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
-          >
-            <div className="min-w-0">
-              <Link
-                to="/wine/$wineId/"
-                params={{ wineId: String(item.id) }}
-                className="font-medium hover:underline"
-              >
-                {item.producer}{' '}
-                <span className="font-normal text-muted-foreground">
-                  {item.wine_name}
-                  {item.vintage ? ` ${item.vintage}` : ''}
-                </span>
-              </Link>
-              <div className="text-xs text-muted-foreground">
-                {[item.region, item.wine_type].filter(Boolean).join(' · ')}
-              </div>
-            </div>
-            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-              <DrinkingWindow
-                start={item.drinking_window_start}
-                end={item.drinking_window_end}
-                year={year}
-                className="max-w-40 flex-wrap justify-end text-right text-xs"
-              />
-              <Badge variant="secondary" className="tabular-nums">
-                ×{item.quantity}
-              </Badge>
-            </div>
-          </div>
+          <DrinkNowWineRow key={item.id} item={item} year={year} />
         ))}
       </CardContent>
     </Card>

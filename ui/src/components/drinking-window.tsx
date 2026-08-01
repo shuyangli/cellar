@@ -49,7 +49,7 @@ export function DrinkingWindow({
   if (!start && !end) return <span className={className}>—</span>
   return (
     <span
-      className={`inline-flex items-center gap-1 tabular-nums ${className}`}
+      className={`inline-flex items-center gap-1 whitespace-nowrap tabular-nums ${className}`}
     >
       {start ? <YearValue value={start} year={year} /> : <span>now</span>}
       <span className="sr-only">to</span>
