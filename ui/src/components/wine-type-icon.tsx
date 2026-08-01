@@ -78,3 +78,16 @@ export function WineTypeIcon({ wineType, className = '' }: WineTypeIconProps) {
     </svg>
   )
 }
+
+export function WineDetailIcon({
+  wineType,
+}: Pick<WineTypeIconProps, 'wineType'>) {
+  return (
+    <span data-detail-icon className="shrink-0 rounded-xl bg-muted/60 p-2">
+      <WineTypeIcon
+        wineType={wineType}
+        className="h-12 w-10 text-muted-foreground"
+      />
+    </span>
+  )
+}

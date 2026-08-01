@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 
-import { WineTypeIcon } from './wine-type-icon'
+import { WineDetailIcon, WineTypeIcon } from './wine-type-icon'
 
 afterEach(cleanup)
 
@@ -30,5 +30,11 @@ describe('WineTypeIcon', () => {
   it('uses a neutral accessible fallback for missing types', () => {
     render(<WineTypeIcon wineType={null} />)
     expect(screen.getByRole('img', { name: 'Wine type unknown' })).toBeDefined()
+  })
+
+  it('renders a larger marker for the wine details heading', () => {
+    const { container } = render(<WineDetailIcon wineType="red" />)
+    expect(screen.getByRole('img', { name: 'Red wine' })).toBeDefined()
+    expect(container.querySelector('[data-detail-icon]')).not.toBeNull()
   })
 })

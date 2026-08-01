@@ -24,6 +24,8 @@ import {
 import { Badge } from '#/components/ui/badge'
 import { RatingBadge, RatingBadges } from '#/components/rating-badge'
 import { Button } from '#/components/ui/button'
+import { DrinkingWindow } from '#/components/drinking-window'
+import { WineDetailIcon } from '#/components/wine-type-icon'
 import {
   adjustInventory,
   DEFAULT_CELLAR_SEARCH,
@@ -119,29 +121,32 @@ function WinePage() {
           ← Back to cellar
         </Link>
         <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
-              {wine.producer}
-            </h1>
-            <p className="text-lg text-muted-foreground">
-              {wine.wine_name}
-              {wine.vintage ? ` · ${wine.vintage}` : ''}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {wine.wine_type ? (
-                <Badge variant="outline" className="capitalize">
-                  {wine.wine_type}
-                </Badge>
-              ) : null}
-              {wine.varietal ? (
-                <Badge variant="secondary">{wine.varietal}</Badge>
-              ) : null}
-              <RatingBadges ratings={wine.ratings} />
-              {wine.ratings.length > 1 && wine.avg_rating != null ? (
-                <Badge variant="outline" className="tabular-nums">
-                  {wine.avg_rating} avg
-                </Badge>
-              ) : null}
+          <div className="flex items-start gap-3">
+            <WineDetailIcon wineType={wine.wine_type} />
+            <div>
+              <h1 className="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
+                {wine.producer}
+              </h1>
+              <p className="text-lg text-muted-foreground">
+                {wine.wine_name}
+                {wine.vintage ? ` · ${wine.vintage}` : ''}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {wine.wine_type ? (
+                  <Badge variant="outline" className="capitalize">
+                    {wine.wine_type}
+                  </Badge>
+                ) : null}
+                {wine.varietal ? (
+                  <Badge variant="secondary">{wine.varietal}</Badge>
+                ) : null}
+                <RatingBadges ratings={wine.ratings} />
+                {wine.ratings.length > 1 && wine.avg_rating != null ? (
+                  <Badge variant="outline" className="tabular-nums">
+                    {wine.avg_rating} avg
+                  </Badge>
+                ) : null}
+              </div>
             </div>
           </div>
           <div className="text-right">
@@ -357,7 +362,7 @@ function EditCard({
   )
 }
 
-function Fact({ label, value }: { label: string; value: string | null }) {
+function Fact({ label, value }: { label: string; value: React.ReactNode }) {
   if (!value) return null
   return (
     <div>
@@ -368,10 +373,6 @@ function Fact({ label, value }: { label: string; value: string | null }) {
 }
 
 function FactsCard({ wine }: { wine: WineDossier }) {
-  const drinkingWindow =
-    wine.drinking_window_start || wine.drinking_window_end
-      ? `${wine.drinking_window_start || 'now'} → ${wine.drinking_window_end || 'open'}`
-      : null
   return (
     <Card>
       <CardHeader>
@@ -387,7 +388,17 @@ function FactsCard({ wine }: { wine: WineDossier }) {
             label="Bottle size"
             value={wine.bottle_size_ml ? `${wine.bottle_size_ml} mL` : null}
           />
-          <Fact label="Drinking window" value={drinkingWindow} />
+          <Fact
+            label="Drinking window"
+            value={
+              wine.drinking_window_start || wine.drinking_window_end ? (
+                <DrinkingWindow
+                  start={wine.drinking_window_start}
+                  end={wine.drinking_window_end}
+                />
+              ) : null
+            }
+          />
           <Fact label="Location" value={wine.location} />
           <Fact
             label="Last paid"

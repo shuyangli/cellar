@@ -311,17 +311,68 @@ def test_read_query_rejects_mutations(conn):
 
 
 def test_drinking_window_alerts_buckets(conn):
-    ready = add_sample_wine(conn, producer="A", wine_name="Ready",
-                            drinking_window_start="2020", drinking_window_end="2030")
-    approaching = add_sample_wine(conn, producer="B", wine_name="Approaching",
-                                  drinking_window_start="2035", drinking_window_end="2045")
-    past = add_sample_wine(conn, producer="C", wine_name="Past",
-                           drinking_window_start="2010", drinking_window_end="2015")
-    none = add_sample_wine(conn, producer="D", wine_name="NoWindow")
-    for wine in (ready, approaching, past, none):
+    year = core.dt.date.today().year
+    wines = [
+        add_sample_wine(
+            conn,
+            producer="A",
+            wine_name="Past",
+            drinking_window_start=str(year - 10),
+            drinking_window_end=str(year - 1),
+        ),
+        add_sample_wine(
+            conn,
+            producer="B",
+            wine_name="DrinkFirst",
+            drinking_window_start=str(year - 5),
+            drinking_window_end=str(year + 1),
+        ),
+        add_sample_wine(
+            conn,
+            producer="C",
+            wine_name="DrinkSoon",
+            drinking_window_start=str(year - 2),
+            drinking_window_end=str(year + 3),
+        ),
+        add_sample_wine(
+            conn,
+            producer="D",
+            wine_name="ReadyToHold",
+            drinking_window_start=str(year),
+            drinking_window_end=str(year + 7),
+        ),
+        add_sample_wine(
+            conn,
+            producer="E",
+            wine_name="LongTerm",
+            drinking_window_start=str(year),
+            drinking_window_end=str(year + 8),
+        ),
+        add_sample_wine(
+            conn,
+            producer="F",
+            wine_name="OpenEnded",
+            drinking_window_start=str(year - 2),
+        ),
+        add_sample_wine(
+            conn,
+            producer="G",
+            wine_name="Approaching",
+            drinking_window_start=str(year + 2),
+            drinking_window_end=str(year + 12),
+        ),
+        add_sample_wine(conn, producer="H", wine_name="NoWindow"),
+    ]
+    for wine in wines:
         core.log_purchase(conn, wine["id"], 1)
     alerts = core.drinking_window_alerts(conn)
-    assert [w["wine_name"] for w in alerts["ready"]] == ["Ready"]
+    assert [w["wine_name"] for w in alerts["drink_first"]] == ["DrinkFirst"]
+    assert [w["wine_name"] for w in alerts["drink_soon"]] == ["DrinkSoon"]
+    assert [w["wine_name"] for w in alerts["ready_to_hold"]] == [
+        "ReadyToHold",
+        "OpenEnded",
+    ]
+    assert [w["wine_name"] for w in alerts["long_term"]] == ["LongTerm"]
     assert [w["wine_name"] for w in alerts["approaching"]] == ["Approaching"]
     assert [w["wine_name"] for w in alerts["past_peak"]] == ["Past"]
     assert [w["wine_name"] for w in alerts["no_window"]] == ["NoWindow"]

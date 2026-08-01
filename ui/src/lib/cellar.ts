@@ -133,7 +133,10 @@ export type WineDossier = CellarItem & {
 
 export type DrinkNowPayload = {
   year: number
-  ready: Array<CellarItem & { closing_soon?: boolean }>
+  drink_first: Array<CellarItem>
+  drink_soon: Array<CellarItem>
+  ready_to_hold: Array<CellarItem>
+  long_term: Array<CellarItem>
   approaching: Array<CellarItem>
   past_peak: Array<CellarItem>
   no_window: Array<CellarItem>
