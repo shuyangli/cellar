@@ -708,7 +708,10 @@ def _window_year(value: str | None) -> int | None:
 
 def drinking_window_alerts(conn: sqlite3.Connection) -> dict[str, Any]:
     year = dt.date.today().year
-    ready: list[dict[str, Any]] = []
+    drink_first: list[dict[str, Any]] = []
+    drink_soon: list[dict[str, Any]] = []
+    ready_to_hold: list[dict[str, Any]] = []
+    long_term: list[dict[str, Any]] = []
     approaching: list[dict[str, Any]] = []
     past_peak: list[dict[str, Any]] = []
     no_window: list[dict[str, Any]] = []
@@ -721,6 +724,7 @@ def drinking_window_alerts(conn: sqlite3.Connection) -> dict[str, Any]:
     ).fetchall()
     for row in rows:
         item = _row(row)
+        assert item is not None
         start = _window_year(item["drinking_window_start"])
         end = _window_year(item["drinking_window_end"])
         if start is None and end is None:
@@ -729,13 +733,22 @@ def drinking_window_alerts(conn: sqlite3.Connection) -> dict[str, Any]:
             past_peak.append(item)
         elif start is not None and start > year:
             approaching.append(item)
+        elif end is not None and end <= year + 1:
+            drink_first.append(item)
+        elif end is not None and end <= year + 3:
+            drink_soon.append(item)
+        elif end is not None and end >= year + 8:
+            long_term.append(item)
         else:
-            item["closing_soon"] = end is not None and end <= year + 1
-            ready.append(item)
-    ready.sort(key=lambda w: (_window_year(w["drinking_window_end"]) or 9999))
+            ready_to_hold.append(item)
+    for bucket in (drink_first, drink_soon, ready_to_hold, long_term, approaching):
+        bucket.sort(key=lambda w: (_window_year(w["drinking_window_end"]) or 9999))
     return {
         "year": year,
-        "ready": ready,
+        "drink_first": drink_first,
+        "drink_soon": drink_soon,
+        "ready_to_hold": ready_to_hold,
+        "long_term": long_term,
         "approaching": approaching,
         "past_peak": past_peak,
         "no_window": no_window,

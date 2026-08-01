@@ -26,6 +26,7 @@ import { Button } from '#/components/ui/button'
 import { Badge } from '#/components/ui/badge'
 import { RatingBadges } from '#/components/rating-badge'
 import { WineTypeIcon } from '#/components/wine-type-icon'
+import { DrinkingWindow } from '#/components/drinking-window'
 import {
   adjustInventoryAndRefresh,
   mobileWineSummary,
@@ -406,11 +407,6 @@ function MobileInventoryRow({
   const origin = [item.country, item.region, item.appellation]
     .filter(Boolean)
     .join(' · ')
-  const drinkingWindow =
-    item.drinking_window_start || item.drinking_window_end
-      ? `${item.drinking_window_start || 'now'} → ${item.drinking_window_end || 'open'}`
-      : '—'
-
   return (
     <article className="px-4 py-3">
       <div className="flex min-h-12 items-center gap-3">
@@ -482,7 +478,12 @@ function MobileInventoryRow({
             <dt className="text-muted-foreground">Origin</dt>
             <dd>{origin || '—'}</dd>
             <dt className="text-muted-foreground">Drink</dt>
-            <dd className="tabular-nums">{drinkingWindow}</dd>
+            <dd>
+              <DrinkingWindow
+                start={item.drinking_window_start}
+                end={item.drinking_window_end}
+              />
+            </dd>
           </dl>
           <div className="mt-3 flex items-center justify-between gap-3">
             <Link
@@ -537,11 +538,6 @@ function InventoryRow({
   const error = errors.get(item.id)
   const pending = pendingIds.has(item.id)
   const size = item.bottle_size_ml ?? 750
-  const drinkingWindow =
-    item.drinking_window_start || item.drinking_window_end
-      ? `${item.drinking_window_start || 'now'} → ${item.drinking_window_end || 'open'}`
-      : '—'
-
   return (
     <TableRow className="align-top">
       <TableCell className="px-4 py-3 whitespace-normal">
@@ -606,8 +602,11 @@ function InventoryRow({
           <div className="text-muted-foreground">{item.appellation}</div>
         ) : null}
       </TableCell>
-      <TableCell className="whitespace-normal tabular-nums">
-        {drinkingWindow}
+      <TableCell className="whitespace-normal">
+        <DrinkingWindow
+          start={item.drinking_window_start}
+          end={item.drinking_window_end}
+        />
       </TableCell>
       <TableCell className="whitespace-normal">
         {item.ratings.length > 0 ? (
