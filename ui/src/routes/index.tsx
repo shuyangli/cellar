@@ -90,7 +90,7 @@ function CellarPage() {
   const { summary, items, pagination } = data
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
+    <div className="mx-auto flex max-w-6xl flex-col gap-7 px-4 py-7 sm:px-6 sm:py-10">
       <Hero summary={summary} />
       <FilterBar search={search} />
       <InventorySection
@@ -112,23 +112,27 @@ function Hero({ summary }: { summary: CellarPayload['summary'] }) {
   ]
 
   return (
-    <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+    <div className="flex flex-col gap-7 md:flex-row md:items-end md:justify-between">
       <div>
-        <p className="text-xs font-medium tracking-[0.18em] text-muted-foreground uppercase">
+        <p className="text-[0.68rem] font-semibold tracking-[0.22em] text-primary/75 uppercase">
           Private cellar view
         </p>
-        <h1 className="font-heading mt-2 text-3xl font-semibold tracking-tight md:text-4xl">
+        <h1 className="font-heading mt-1.5 text-4xl font-semibold tracking-[-0.035em] md:text-5xl">
           Cellar
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1.5 text-sm text-muted-foreground">
           Managed by agents; reviewed by humans.
         </p>
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {stats.map((stat) => (
-          <Card key={stat.label} size="sm" className="min-w-[7.5rem]">
+          <Card
+            key={stat.label}
+            size="sm"
+            className="min-w-[7.5rem] bg-card/78 transition-transform duration-200 hover:-translate-y-0.5"
+          >
             <CardContent className="flex flex-col gap-0.5">
-              <span className="font-heading text-lg font-semibold tabular-nums">
+              <span className="font-heading text-xl font-semibold tracking-[-0.02em] tabular-nums">
                 {stat.value.toLocaleString()}
               </span>
               <span className="text-xs text-muted-foreground">
@@ -162,7 +166,7 @@ function FilterBar({ search }: { search: CellarSearch }) {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/75 bg-card/55 p-2.5 shadow-[0_4px_20px_rgb(63_52_40/0.035)] backdrop-blur-sm">
       <form
         className="flex min-w-0 flex-1 items-center gap-2"
         onSubmit={(event) => {
@@ -175,7 +179,7 @@ function FilterBar({ search }: { search: CellarSearch }) {
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           placeholder="Search producer, wine, region, grape…"
-          className="h-9 w-full min-w-0 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring sm:max-w-xs"
+          className="h-9 w-full min-w-0 flex-1 rounded-lg border bg-card/90 px-3 text-sm shadow-inner shadow-black/[0.015] outline-none placeholder:text-muted-foreground/75 focus-visible:ring-2 focus-visible:ring-ring sm:max-w-xs"
         />
         <Button type="submit" variant="outline" size="sm">
           Search

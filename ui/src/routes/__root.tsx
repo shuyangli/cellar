@@ -52,20 +52,23 @@ function RootLayout() {
   useEffect(() => installResumeRefresh(() => router.invalidate()), [router])
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
-        <nav className="mx-auto flex max-w-6xl items-center gap-1 overflow-x-auto px-4 py-2 sm:px-6">
-          <span className="font-heading mr-3 hidden text-sm font-semibold tracking-tight sm:inline">
-            🍷 Cellar
+    <div className="min-h-screen text-foreground">
+      <header className="sticky top-0 z-10 border-b border-border/75 bg-[#faf8f3]/88 shadow-[0_1px_12px_rgb(67_53_38/0.04)] backdrop-blur-xl">
+        <nav className="mx-auto flex max-w-6xl items-center gap-1 overflow-x-auto px-4 py-2.5 sm:px-6">
+          <span className="font-heading mr-4 hidden items-center gap-2 text-lg font-semibold tracking-[-0.02em] sm:flex">
+            <span className="flex size-7 items-center justify-center rounded-full bg-primary text-[13px] text-primary-foreground shadow-sm">
+              C
+            </span>
+            Cellar
           </span>
           {NAV_LINKS.map((link) => (
             <Link
               key={link.to}
               to={link.to}
-              className="rounded-md px-3 py-1.5 text-sm whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground"
+              className="rounded-full px-3 py-1.5 text-sm whitespace-nowrap text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
               activeProps={{
                 className:
-                  'rounded-md px-3 py-1.5 text-sm whitespace-nowrap bg-secondary font-medium text-foreground',
+                  'rounded-full px-3 py-1.5 text-sm whitespace-nowrap bg-secondary font-medium text-foreground shadow-[inset_0_0_0_1px_rgb(99_50_60/0.07)]',
               }}
               activeOptions={{ exact: link.to === '/' }}
             >
