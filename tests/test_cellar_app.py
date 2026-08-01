@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from cellar import config, core, db
-from cellar.web import app
+from cellar.web import app, cache_control_value
 
 
 @pytest.fixture(autouse=True)
@@ -26,6 +26,23 @@ def conn():
 def client():
     with TestClient(app) as test_client:
         yield test_client
+
+
+def test_dynamic_responses_disable_browser_caching(client):
+    assert client.get("/health").headers["cache-control"] == "no-store"
+    assert client.get("/api/cellar").headers["cache-control"] == "no-store"
+
+
+def test_cache_policy_keeps_hashed_assets_immutable():
+    assert (
+        cache_control_value("/assets/index-AbCd1234.js", "text/javascript")
+        == "public, max-age=31536000, immutable"
+    )
+
+
+def test_cache_policy_never_caches_the_app_shell():
+    assert cache_control_value("/", "text/html; charset=utf-8") == "no-store"
+    assert cache_control_value("/missing-route", "text/html; charset=utf-8") == "no-store"
 
 
 def add_sample_wine(conn, **overrides):

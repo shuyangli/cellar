@@ -217,7 +217,7 @@ function apiBase(): string {
 }
 
 async function fetchJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${apiBase()}${path}`)
+  const res = await fetch(`${apiBase()}${path}`, { cache: 'no-store' })
   if (!res.ok) {
     throw new Error(`Failed to load ${path}: ${res.status} ${res.statusText}`)
   }
