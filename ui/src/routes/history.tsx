@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { useState } from 'react'
 
 import { Card, CardContent } from '#/components/ui/card'
@@ -6,7 +6,8 @@ import { Badge } from '#/components/ui/badge'
 import { RatingBadge } from '#/components/rating-badge'
 import { Button } from '#/components/ui/button'
 import { ExternalTastingForm } from '#/components/external-tasting-form'
-import { fetchTastings, formatWineTitle } from '#/lib/cellar'
+import { TastingEditor } from '#/components/tasting-editor'
+import { fetchTastings, formatWineTitle, updateTasting } from '#/lib/cellar'
 import type { TastingWithWine } from '#/lib/cellar'
 
 export const Route = createFileRoute('/history')({
@@ -61,6 +62,8 @@ function HistoryPage() {
 
 function TastingCard({ tasting }: { tasting: TastingWithWine }) {
   const elsewhere = tasting.context_type !== 'home'
+  const router = useRouter()
+  const [editing, setEditing] = useState(false)
 
   return (
     <Card>
@@ -86,6 +89,14 @@ function TastingCard({ tasting }: { tasting: TastingWithWine }) {
               would buy again
             </Badge>
           ) : null}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-7 px-2 text-xs text-muted-foreground"
+            onClick={() => setEditing((value) => !value)}
+          >
+            {editing ? 'Close editor' : 'Edit'}
+          </Button>
         </div>
         <div className="text-xs text-muted-foreground">
           {[
@@ -108,6 +119,17 @@ function TastingCard({ tasting }: { tasting: TastingWithWine }) {
           <p className="text-xs text-muted-foreground">
             Paired with {tasting.food_pairing}
           </p>
+        ) : null}
+        {editing ? (
+          <TastingEditor
+            tasting={tasting}
+            onSave={(update) => updateTasting(tasting.id, update)}
+            onSaved={() => {
+              setEditing(false)
+              void router.invalidate()
+            }}
+            onCancel={() => setEditing(false)}
+          />
         ) : null}
       </CardContent>
     </Card>

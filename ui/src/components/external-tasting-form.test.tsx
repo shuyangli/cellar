@@ -60,6 +60,7 @@ describe('ExternalTastingForm', () => {
     expect(screen.getByPlaceholderText('Restaurant or bar name')).toBeDefined()
     expect(screen.getByPlaceholderText('93')).toBeDefined()
     expect(screen.getByText('Save tasting')).toBeDefined()
+    expect(screen.queryByRole('option', { name: 'home' })).toBeNull()
   })
 
   it('defaults the tasting date to today so the common case needs no typing', () => {

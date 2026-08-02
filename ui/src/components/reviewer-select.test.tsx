@@ -40,11 +40,18 @@ function stubUsers(payload: unknown = USERS, ok = true) {
 }
 
 /** Mirrors how the tasting form owns the value. */
-function Harness({ onValue }: { onValue?: (name: string) => void }) {
+function Harness({
+  onValue,
+  allowUnassigned = false,
+}: {
+  onValue?: (name: string) => void
+  allowUnassigned?: boolean
+}) {
   const [value, setValue] = useState('')
   return (
     <ReviewerSelect
       value={value}
+      allowUnassigned={allowUnassigned}
       onChange={(name) => {
         setValue(name)
         onValue?.(name)
@@ -73,6 +80,16 @@ describe('ReviewerSelect', () => {
     render(<Harness onValue={(name) => seen.push(name)} />)
 
     await waitFor(() => expect(seen).toContain('Shuyang'))
+  })
+
+  it('can preserve an unassigned reviewer while editing legacy reviews', async () => {
+    stubUsers()
+    const seen: Array<string> = []
+    render(<Harness allowUnassigned onValue={(name) => seen.push(name)} />)
+
+    await waitFor(() => expect(screen.getByText('Unassigned')).toBeDefined())
+    expect(seen).toEqual([])
+    expect(screen.getByRole<HTMLSelectElement>('combobox').value).toBe('')
   })
 
   it('lets a new person be named, so reviewers are not a fixed set', async () => {

@@ -23,6 +23,7 @@ import {
 } from '#/components/ui/table'
 import { Badge } from '#/components/ui/badge'
 import { RatingBadge, RatingBadges } from '#/components/rating-badge'
+import { TastingEditor } from '#/components/tasting-editor'
 import { Button } from '#/components/ui/button'
 import { DrinkingWindow } from '#/components/drinking-window'
 import { WineDetailIcon } from '#/components/wine-type-icon'
@@ -34,6 +35,7 @@ import {
   deleteWine,
   fetchWine,
   photoUrl,
+  updateTasting,
   updateWine,
   WINE_TYPE_OPTIONS,
 } from '#/lib/cellar'
@@ -201,7 +203,11 @@ function WinePage() {
       ) : null}
       <FactsCard wine={wine} />
       {wine.photos.length > 0 ? <PhotosCard wine={wine} /> : null}
-      <TastingsCard tastings={wine.tastings} onMutate={run} />
+      <TastingsCard
+        tastings={wine.tastings}
+        onMutate={run}
+        onRefresh={refresh}
+      />
       <PurchasesCard purchases={wine.purchases} onMutate={run} />
       <EventsCard wine={wine} />
     </div>
@@ -450,10 +456,14 @@ function PhotosCard({ wine }: { wine: WineDossier }) {
 function TastingsCard({
   tastings,
   onMutate,
+  onRefresh,
 }: {
   tastings: Array<Tasting>
   onMutate: (action: () => Promise<unknown>) => Promise<void>
+  onRefresh: () => Promise<unknown>
 }) {
+  const [editingId, setEditingId] = useState<number | null>(null)
+
   const onDelete = (tasting: Tasting) => {
     if (
       !window.confirm(
@@ -505,7 +515,19 @@ function TastingsCard({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="ml-auto h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                  className="ml-auto h-7 px-2 text-xs text-muted-foreground"
+                  onClick={() =>
+                    setEditingId((current) =>
+                      current === tasting.id ? null : tasting.id,
+                    )
+                  }
+                >
+                  {editingId === tasting.id ? 'Close editor' : 'Edit'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
                   onClick={() => onDelete(tasting)}
                 >
                   Delete
@@ -518,6 +540,17 @@ function TastingsCard({
                 <p className="mt-1 text-xs text-muted-foreground">
                   Paired with {tasting.food_pairing}
                 </p>
+              ) : null}
+              {editingId === tasting.id ? (
+                <TastingEditor
+                  tasting={tasting}
+                  onSave={(update) => updateTasting(tasting.id, update)}
+                  onSaved={() => {
+                    setEditingId(null)
+                    void onRefresh()
+                  }}
+                  onCancel={() => setEditingId(null)}
+                />
               ) : null}
             </div>
           ))}

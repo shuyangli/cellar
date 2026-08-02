@@ -17,7 +17,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import config, core, db
@@ -128,6 +128,27 @@ class TastingCreate(BaseModel):
     buy_again: bool | None = None
     tasted_on: str = ""
     consume_bottle: bool = True
+
+
+class TastingUpdate(BaseModel):
+    user: str | int | None = None
+    rating: int | None = Field(default=None, ge=0, le=100)
+    tasting_notes: str | None = None
+    food_pairing: str | None = None
+    context_type: str = "home"
+    venue: str | None = None
+    price_paid: float | None = Field(default=None, ge=0)
+    liked: bool = False
+    buy_again: bool = False
+    tasted_on: str | None = None
+
+    @field_validator("context_type")
+    @classmethod
+    def context_type_must_not_be_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("context type is required")
+        return value
 
 
 class WishlistCreate(BaseModel):
@@ -267,6 +288,18 @@ def api_delete_tasting(
         return core.delete_tasting(conn, tasting_id)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.patch("/api/tastings/{tasting_id}")
+def api_update_tasting(
+    tasting_id: int,
+    update: TastingUpdate,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict[str, Any]:
+    fields = update.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(status_code=400, detail="no fields to update")
+    return _wrap(core.update_tasting, conn, tasting_id, **fields)
 
 
 @app.delete("/api/purchases/{purchase_id}")

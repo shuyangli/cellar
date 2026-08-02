@@ -27,9 +27,11 @@ function defaultReviewer(users: Array<User>): string | undefined {
 export function ReviewerSelect({
   value,
   onChange,
+  allowUnassigned = false,
 }: {
   value: string
   onChange: (name: string) => void
+  allowUnassigned?: boolean
 }) {
   const [users, setUsers] = useState<Array<User> | null>(null)
   const [naming, setNaming] = useState(false)
@@ -42,7 +44,7 @@ export function ReviewerSelect({
         setUsers(loaded)
         // Default to whoever the API marks default, so the common case is one click.
         const fallback = defaultReviewer(loaded)
-        if (!value && fallback) onChange(fallback)
+        if (!allowUnassigned && !value && fallback) onChange(fallback)
       })
       .catch(() => {
         // A failed load just means typing a name instead of picking one.
@@ -101,6 +103,7 @@ export function ReviewerSelect({
         onChange(event.target.value)
       }}
     >
+      {allowUnassigned && <option value="">Unassigned</option>}
       {users.map((user) => (
         <option key={user.id} value={user.name}>
           {user.name} ({user.initials})

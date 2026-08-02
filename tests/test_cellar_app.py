@@ -510,6 +510,118 @@ def test_set_tasting_user_reattributes_review(conn):
         core.set_tasting_user(conn, tasting_id, "")
 
 
+def test_update_tasting_edits_review_without_changing_inventory(conn):
+    wine = add_sample_wine(conn)
+    core.log_purchase(conn, wine["id"], 2)
+    wine = core.log_tasting(
+        conn,
+        wine["id"],
+        rating=88,
+        tasting_notes="closed at first",
+        context_type="home",
+        consume_bottle=True,
+    )
+    tasting_id = wine["tastings"][0]["id"]
+    quantity_before = wine["quantity"]
+    events_before = wine["events"]
+
+    updated = core.update_tasting(
+        conn,
+        tasting_id,
+        user="Alex",
+        rating=93,
+        tasting_notes="opened into chalk and citrus",
+        food_pairing="roast chicken",
+        context_type="restaurant",
+        venue="The Four Horsemen",
+        price_paid=24.0,
+        liked=False,
+        buy_again=True,
+        tasted_on="2026-08-01",
+    )
+
+    [review] = updated["tastings"]
+    assert review["user_name"] == "Alex"
+    assert review["rating"] == 93
+    assert review["tasting_notes"] == "opened into chalk and citrus"
+    assert review["food_pairing"] == "roast chicken"
+    assert review["context_type"] == "restaurant"
+    assert review["venue"] == "The Four Horsemen"
+    assert review["price_paid"] == 24.0
+    assert review["liked"] == 0
+    assert review["buy_again"] == 1
+    assert review["tasted_on"] == "2026-08-01"
+    assert updated["quantity"] == quantity_before
+    assert updated["events"] == events_before
+    assert updated["avg_rating"] == 93
+
+
+def test_update_tasting_can_clear_optional_review_fields(conn):
+    wine = add_sample_wine(conn)
+    wine = core.log_tasting(
+        conn,
+        wine["id"],
+        rating=91,
+        tasting_notes="temporary note",
+        venue="At home",
+        price_paid=30.0,
+        consume_bottle=False,
+    )
+
+    updated = core.update_tasting(
+        conn,
+        wine["tastings"][0]["id"],
+        rating=None,
+        tasting_notes="",
+        venue="",
+        price_paid=None,
+    )
+
+    [review] = updated["tastings"]
+    assert review["rating"] is None
+    assert review["tasting_notes"] is None
+    assert review["venue"] is None
+    assert review["price_paid"] is None
+    assert updated["avg_rating"] is None
+
+
+def test_update_tasting_rejects_invalid_fields_and_missing_rows(conn):
+    wine = add_sample_wine(conn)
+    wine = core.log_tasting(conn, wine["id"], rating=90, consume_bottle=False)
+    tasting_id = wine["tastings"][0]["id"]
+
+    with pytest.raises(ValueError, match="rating must be 0-100"):
+        core.update_tasting(conn, tasting_id, rating=101)
+    with pytest.raises(ValueError, match="context type is required"):
+        core.update_tasting(conn, tasting_id, context_type=None)
+    with pytest.raises(ValueError, match="context type is required"):
+        core.update_tasting(conn, tasting_id, context_type=" ")
+    with pytest.raises(ValueError, match="buy again must be true or false"):
+        core.update_tasting(conn, tasting_id, buy_again=None)
+    with pytest.raises(ValueError, match="unknown tasting fields"):
+        core.update_tasting(conn, tasting_id, consume_bottle=True)
+    with pytest.raises(ValueError, match="no tasting"):
+        core.update_tasting(conn, 9999, rating=90)
+
+
+def test_update_tasting_preserves_or_clears_unattributed_reviewer(conn):
+    wine = add_sample_wine(conn)
+    wine = core.log_tasting(
+        conn, wine["id"], user="Alex", rating=90, consume_bottle=False
+    )
+    tasting_id = wine["tastings"][0]["id"]
+
+    reattributed = core.update_tasting(conn, tasting_id, user="  alex  ")
+    assert reattributed["tastings"][0]["user_name"] == "Alex"
+    assert [user["name"] for user in core.list_users(conn)] == ["Shuyang", "Alex"]
+
+    cleared = core.update_tasting(conn, tasting_id, user=None)
+    assert cleared["tastings"][0]["user_name"] is None
+
+    preserved = core.update_tasting(conn, tasting_id, rating=91)
+    assert preserved["tastings"][0]["user_name"] is None
+
+
 def test_delete_purchase_removes_bottles(conn):
     wine = add_sample_wine(conn)
     wine = core.log_purchase(conn, wine["id"], 3)
@@ -560,6 +672,38 @@ def test_update_and_delete_endpoints(client):
     tasting = client.post(
         f"/api/wines/{wine_id}/tastings", json={"rating": 88}
     ).json()["tastings"][0]
+    edited = client.patch(
+        f"/api/tastings/{tasting['id']}",
+        json={
+            "user": "Alex",
+            "rating": 94,
+            "tasting_notes": "much better with air",
+            "liked": False,
+            "buy_again": True,
+        },
+    )
+    assert edited.status_code == 200
+    [edited_review] = edited.json()["tastings"]
+    assert edited_review["user_name"] == "Alex"
+    assert edited_review["rating"] == 94
+    assert edited_review["tasting_notes"] == "much better with air"
+    assert edited_review["liked"] == 0
+    assert edited_review["buy_again"] == 1
+    assert edited.json()["quantity"] == 0
+    assert client.patch(
+        f"/api/tastings/{tasting['id']}", json={"rating": 101}
+    ).status_code == 422
+    for invalid in (
+        {"context_type": None},
+        {"context_type": " "},
+        {"liked": None},
+        {"buy_again": None},
+    ):
+        assert client.patch(
+            f"/api/tastings/{tasting['id']}", json=invalid
+        ).status_code == 422
+    assert client.patch(f"/api/tastings/{tasting['id']}", json={}).status_code == 400
+    assert client.patch("/api/tastings/9999", json={"rating": 90}).status_code == 404
     restored = client.delete(f"/api/tastings/{tasting['id']}")
     assert restored.status_code == 200
     assert restored.json()["quantity"] == 1

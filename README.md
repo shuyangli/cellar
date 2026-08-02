@@ -10,8 +10,9 @@ phone / laptop over Tailscale ───────── FastAPI :8788 ──�
                                           └─ serves the built TanStack UI + JSON API
 ```
 
-Agents do all the writing (logging purchases, tastings, photos); the web UI is
-read-only.
+Agents handle ingestion-heavy writes such as purchases and photos. The web UI
+supports common human actions, including inventory adjustments, tasting logs,
+wine-detail edits, review edits, and deletion of mistaken records.
 
 ## Layout
 
@@ -105,7 +106,7 @@ Original endpoints (kept): `GET /api/cellar`, `POST /api/cellar/items`,
 `POST /api/cellar/items/{id}/adjust`, `GET /health`.
 
 Added: `GET /api/wines/{id}` (full dossier), `POST /api/wines/{id}/purchases`,
-`POST /api/wines/{id}/tastings`, `GET /api/stats`, `GET /api/drink-now`,
+`POST /api/wines/{id}/tastings`, `PATCH /api/tastings/{id}`, `GET /api/stats`, `GET /api/drink-now`,
 `GET /api/tastings`, `GET /api/wishlist`, `POST /api/wishlist`,
 `DELETE /api/wishlist/{id}`, `GET /photos/{filename}`.
 

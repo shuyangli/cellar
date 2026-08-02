@@ -383,11 +383,31 @@ export type TastingDraft = {
   consume_bottle?: boolean
 }
 
+export type TastingUpdate = Partial<{
+  user: string | number | null
+  rating: number | null
+  tasting_notes: string
+  food_pairing: string
+  context_type: string
+  venue: string
+  price_paid: number | null
+  liked: boolean
+  buy_again: boolean
+  tasted_on: string
+}>
+
 export function logTasting(
   wineId: number,
   draft: TastingDraft,
 ): Promise<WineDossier> {
   return mutate<WineDossier>(`/api/wines/${wineId}/tastings`, 'POST', draft)
+}
+
+export function updateTasting(
+  tastingId: number,
+  update: TastingUpdate,
+): Promise<WineDossier> {
+  return mutate<WineDossier>(`/api/tastings/${tastingId}`, 'PATCH', update)
 }
 
 /** Raw form values for a wine tasted away from the cellar. */
