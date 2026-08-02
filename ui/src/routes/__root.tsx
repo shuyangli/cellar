@@ -52,11 +52,17 @@ function RootLayout() {
   useEffect(() => installResumeRefresh(() => router.invalidate()), [router])
 
   return (
-    <div className="min-h-screen text-foreground">
-      <header className="sticky top-0 z-10 border-b border-border/75 bg-[#faf8f3]/88 shadow-[0_1px_12px_rgb(67_53_38/0.04)] backdrop-blur-xl">
+    <div className="relative isolate min-h-screen text-foreground">
+      <div className="cellar-atmosphere" aria-hidden="true">
+        <span className="cellar-bubble" />
+        <span className="cellar-bubble" />
+        <span className="cellar-bubble" />
+        <span className="cellar-bubble" />
+      </div>
+      <header className="sticky top-0 z-10 border-b border-white/45 bg-[linear-gradient(100deg,rgb(253_249_241/0.9),rgb(247_238_230/0.84),rgb(246_234_235/0.86))] shadow-[0_1px_18px_rgb(67_53_38/0.055)] backdrop-blur-xl">
         <nav className="mx-auto flex max-w-6xl items-center gap-1 overflow-x-auto px-4 py-2.5 sm:px-6">
-          <span className="font-heading mr-4 hidden items-center gap-2 text-lg font-semibold tracking-[-0.02em] sm:flex">
-            <span className="flex size-7 items-center justify-center rounded-full bg-primary text-[13px] text-primary-foreground shadow-sm">
+          <span className="font-heading mr-4 hidden items-center gap-2 text-lg font-semibold tracking-[0.01em] sm:flex">
+            <span className="flex size-7 items-center justify-center rounded-full bg-[linear-gradient(145deg,#814559,#552534)] text-[13px] text-primary-foreground shadow-[0_4px_13px_rgb(108_48_64/0.24),inset_0_1px_rgb(255_255_255/0.24)]">
               C
             </span>
             Cellar
