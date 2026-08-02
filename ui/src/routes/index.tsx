@@ -114,10 +114,10 @@ function Hero({ summary }: { summary: CellarPayload['summary'] }) {
   return (
     <div className="flex flex-col gap-7 md:flex-row md:items-end md:justify-between">
       <div>
-        <p className="text-[0.68rem] font-semibold tracking-[0.22em] text-primary/75 uppercase">
+        <p className="cellar-kicker text-[0.68rem] font-semibold text-primary/75 uppercase">
           Private cellar view
         </p>
-        <h1 className="font-heading mt-1.5 text-4xl font-semibold tracking-[-0.035em] md:text-5xl">
+        <h1 className="font-heading mt-1.5 bg-[linear-gradient(115deg,#302920_10%,#71384a_72%,#9a634e)] bg-clip-text text-5xl font-medium tracking-[-0.025em] text-transparent md:text-6xl">
           Cellar
         </h1>
         <p className="mt-1.5 text-sm text-muted-foreground">
@@ -129,10 +129,10 @@ function Hero({ summary }: { summary: CellarPayload['summary'] }) {
           <Card
             key={stat.label}
             size="sm"
-            className="min-w-[7.5rem] bg-card/78 transition-transform duration-200 hover:-translate-y-0.5"
+            className="min-w-[7.5rem] bg-card/72 transition-[transform,box-shadow] duration-300 hover:-translate-y-1 hover:shadow-[0_16px_38px_rgb(77_52_34/0.1)]"
           >
             <CardContent className="flex flex-col gap-0.5">
-              <span className="font-heading text-xl font-semibold tracking-[-0.02em] tabular-nums">
+              <span className="font-heading text-2xl font-medium tracking-[-0.01em] tabular-nums">
                 {stat.value.toLocaleString()}
               </span>
               <span className="text-xs text-muted-foreground">
