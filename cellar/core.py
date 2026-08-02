@@ -43,6 +43,19 @@ WINE_FIELDS = {
 
 WINE_TYPES = {"red", "white", "rose", "sparkling", "dessert", "fortified", "orange", "other"}
 
+TASTING_UPDATE_FIELDS = {
+    "user",
+    "rating",
+    "liked",
+    "tasting_notes",
+    "food_pairing",
+    "context_type",
+    "venue",
+    "price_paid",
+    "buy_again",
+    "tasted_on",
+}
+
 
 def _row(row: sqlite3.Row | None) -> dict[str, Any] | None:
     return None if row is None else {key: row[key] for key in row.keys()}
@@ -73,6 +86,8 @@ def default_user_id(conn: sqlite3.Connection) -> int:
 
 def resolve_user(conn: sqlite3.Connection, user: str | int | None) -> int:
     """Accept a user id, a user name (created on first use), or None (default user)."""
+    if isinstance(user, str):
+        user = user.strip()
     if user is None or user == "":
         return default_user_id(conn)
     if isinstance(user, int) or (isinstance(user, str) and user.isdigit()):
@@ -437,6 +452,55 @@ def log_tasting(
         )
     conn.commit()
     return get_wine(conn, wine_id)
+
+
+def update_tasting(
+    conn: sqlite3.Connection, tasting_id: int, **fields: Any
+) -> dict[str, Any]:
+    """Edit a review without changing the inventory event linked to its tasting."""
+    unknown = set(fields) - TASTING_UPDATE_FIELDS
+    if unknown:
+        raise ValueError(f"unknown tasting fields: {sorted(unknown)}")
+    if not fields:
+        raise ValueError("no fields to update")
+    row = conn.execute(
+        "SELECT wine_id FROM tastings WHERE id = ?", (tasting_id,)
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"no tasting with id {tasting_id}")
+
+    rating = fields.get("rating")
+    if rating is not None and not 0 <= rating <= 100:
+        raise ValueError("rating must be 0-100")
+    price_paid = fields.get("price_paid")
+    if price_paid is not None and price_paid < 0:
+        raise ValueError("price_paid cannot be negative")
+    if "context_type" in fields:
+        context_type = fields["context_type"]
+        if not isinstance(context_type, str) or not context_type.strip():
+            raise ValueError("context type is required")
+    if "buy_again" in fields and fields["buy_again"] is None:
+        raise ValueError("buy again must be true or false")
+
+    updates: dict[str, Any] = {}
+    if "user" in fields:
+        user = fields.pop("user")
+        updates["user_id"] = None if user is None else resolve_user(conn, user)
+    for key, value in fields.items():
+        if isinstance(value, str):
+            value = value.strip() or None
+        if key in {"liked", "buy_again"} and value is not None:
+            value = int(bool(value))
+        updates[key] = value
+
+    assignments = ", ".join(f"{key} = ?" for key in updates)
+    conn.execute(
+        f"UPDATE tastings SET {assignments} WHERE id = ?",
+        (*updates.values(), tasting_id),
+    )
+    _touch_wine(conn, row["wine_id"])
+    conn.commit()
+    return get_wine(conn, row["wine_id"])
 
 
 def adjust_inventory(
