@@ -481,6 +481,8 @@ def update_tasting(
             raise ValueError("context type is required")
     if "buy_again" in fields and fields["buy_again"] is None:
         raise ValueError("buy again must be true or false")
+    if "user" in fields and isinstance(fields["user"], str) and not fields["user"].strip():
+        raise ValueError("reviewer is required")
 
     updates: dict[str, Any] = {}
     if "user" in fields:

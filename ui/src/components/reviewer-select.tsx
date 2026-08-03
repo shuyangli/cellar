@@ -35,6 +35,7 @@ export function ReviewerSelect({
 }) {
   const [users, setUsers] = useState<Array<User> | null>(null)
   const [naming, setNaming] = useState(false)
+  const [previousValue, setPreviousValue] = useState<string | null>(null)
 
   useEffect(() => {
     let live = true
@@ -81,7 +82,8 @@ export function ReviewerSelect({
           className="text-xs whitespace-nowrap text-muted-foreground hover:text-foreground"
           onClick={() => {
             setNaming(false)
-            onChange(defaultReviewer(users) ?? '')
+            onChange(previousValue ?? value)
+            setPreviousValue(null)
           }}
         >
           Cancel
@@ -96,10 +98,12 @@ export function ReviewerSelect({
       value={value}
       onChange={(event) => {
         if (event.target.value === NEW_REVIEWER) {
+          setPreviousValue(value)
           setNaming(true)
           onChange('')
           return
         }
+        setPreviousValue(null)
         onChange(event.target.value)
       }}
     >

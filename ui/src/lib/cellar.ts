@@ -386,14 +386,14 @@ export type TastingDraft = {
 export type TastingUpdate = Partial<{
   user: string | number | null
   rating: number | null
-  tasting_notes: string
-  food_pairing: string
+  tasting_notes: string | null
+  food_pairing: string | null
   context_type: string
-  venue: string
+  venue: string | null
   price_paid: number | null
   liked: boolean
   buy_again: boolean
-  tasted_on: string
+  tasted_on: string | null
 }>
 
 export function logTasting(
