@@ -150,6 +150,15 @@ class TastingUpdate(BaseModel):
             raise ValueError("context type is required")
         return value
 
+    @field_validator("user")
+    @classmethod
+    def user_must_not_be_blank(cls, value: str | int | None) -> str | int | None:
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                raise ValueError("reviewer is required")
+        return value
+
 
 class WishlistCreate(BaseModel):
     wine_id: int

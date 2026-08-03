@@ -43,11 +43,13 @@ function stubUsers(payload: unknown = USERS, ok = true) {
 function Harness({
   onValue,
   allowUnassigned = false,
+  initialValue = '',
 }: {
   onValue?: (name: string) => void
   allowUnassigned?: boolean
+  initialValue?: string
 }) {
-  const [value, setValue] = useState('')
+  const [value, setValue] = useState(initialValue)
   return (
     <ReviewerSelect
       value={value}
@@ -106,6 +108,38 @@ describe('ReviewerSelect', () => {
 
     expect(seen.at(-1)).toBe('Marta')
   })
+
+  it.each([
+    { initialValue: 'Alex', label: 'Alex' },
+    { initialValue: '', label: 'Unassigned' },
+  ])(
+    'restores $label when naming someone else is cancelled',
+    async ({ initialValue }) => {
+      stubUsers()
+      const seen: Array<string> = []
+      render(
+        <Harness
+          initialValue={initialValue}
+          allowUnassigned
+          onValue={(name) => seen.push(name)}
+        />,
+      )
+      await waitFor(() => expect(screen.getByText('Alex (A)')).toBeDefined())
+
+      fireEvent.change(screen.getByRole('combobox'), {
+        target: { value: '__new_reviewer__' },
+      })
+      fireEvent.change(await screen.findByPlaceholderText("Reviewer's name"), {
+        target: { value: 'Marta' },
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+      expect(screen.getByRole<HTMLSelectElement>('combobox').value).toBe(
+        initialValue,
+      )
+      expect(seen.at(-1)).toBe(initialValue)
+    },
+  )
 
   it('falls back to a name field when the reviewer list cannot load', async () => {
     stubUsers(null, false)

@@ -615,6 +615,9 @@ def test_update_tasting_preserves_or_clears_unattributed_reviewer(conn):
     assert reattributed["tastings"][0]["user_name"] == "Alex"
     assert [user["name"] for user in core.list_users(conn)] == ["Shuyang", "Alex"]
 
+    with pytest.raises(ValueError, match="reviewer is required"):
+        core.update_tasting(conn, tasting_id, user="  ")
+
     cleared = core.update_tasting(conn, tasting_id, user=None)
     assert cleared["tastings"][0]["user_name"] is None
 
@@ -694,6 +697,7 @@ def test_update_and_delete_endpoints(client):
         f"/api/tastings/{tasting['id']}", json={"rating": 101}
     ).status_code == 422
     for invalid in (
+        {"user": "  "},
         {"context_type": None},
         {"context_type": " "},
         {"liked": None},
