@@ -11,6 +11,7 @@ import { useEffect } from 'react'
 
 import appCss from '../styles.css?url'
 import { CellarNavigation } from '../components/cellar-navigation'
+import { cellarPath } from '../lib/base-path'
 import { installResumeRefresh } from '../lib/resume-refresh'
 
 export const Route = createRootRoute({
@@ -31,6 +32,20 @@ export const Route = createRootRoute({
       {
         rel: 'stylesheet',
         href: appCss,
+      },
+      {
+        rel: 'icon',
+        type: 'image/svg+xml',
+        href: cellarPath('/favicon.svg'),
+      },
+      {
+        rel: 'icon',
+        type: 'image/x-icon',
+        href: cellarPath('/favicon.ico'),
+      },
+      {
+        rel: 'apple-touch-icon',
+        href: cellarPath('/apple-touch-icon.png'),
       },
     ],
   }),
