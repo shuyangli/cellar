@@ -213,9 +213,11 @@ def _validated_iso_date(value: str | None, field: str) -> str | None:
 
 
 class OrderedWineCreate(BaseModel):
-    wine_id: int
+    wine_id: int = Field(ge=1, strict=True)
     quantity: int = Field(ge=1, strict=True)
-    price_per_bottle: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    price_per_bottle: float | None = Field(
+        default=None, ge=0, allow_inf_nan=False, strict=True
+    )
     currency: str | None = None
     vendor: str = ""
     order_reference: str = ""
@@ -238,7 +240,9 @@ class OrderedWineCreate(BaseModel):
 
 class OrderedWineUpdate(BaseModel):
     quantity: int | None = Field(default=None, ge=1, strict=True)
-    price_per_bottle: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    price_per_bottle: float | None = Field(
+        default=None, ge=0, allow_inf_nan=False, strict=True
+    )
     currency: str | None = None
     vendor: str | None = None
     order_reference: str | None = None

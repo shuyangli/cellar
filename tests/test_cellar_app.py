@@ -1,11 +1,13 @@
+import asyncio
 import sqlite3
 import threading
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from mcp.server.fastmcp.exceptions import ToolError
 
-from cellar import config, core, db
+from cellar import config, core, db, mcp_server
 from cellar.web import app, cache_control_value
 
 
@@ -1023,28 +1025,13 @@ def test_arriving_ordered_wine_adds_inventory_once(conn):
     assert core.list_ordered_wines(conn, include_arrived=True) == [again]
 
 
-def test_concurrent_arrival_requests_only_add_inventory_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_concurrent_arrival_requests_only_add_inventory_once(tmp_path: Path):
     path = tmp_path / "concurrent-arrival.db"
     setup = db.open_db(path)
     wine = add_sample_wine(setup)
     order = core.add_ordered_wine(setup, wine["id"], 3)
     setup.close()
 
-    original_get = core.get_ordered_wine
-    reads = threading.local()
-    both_read_ordered = threading.Barrier(2)
-
-    def synchronized_first_read(conn, order_id):
-        result = original_get(conn, order_id)
-        count = getattr(reads, "count", 0)
-        reads.count = count + 1
-        if count == 0:
-            both_read_ordered.wait(timeout=5)
-        return result
-
-    monkeypatch.setattr(core, "get_ordered_wine", synchronized_first_read)
     errors: list[Exception] = []
 
     def arrive() -> None:
@@ -1123,6 +1110,93 @@ def test_update_cannot_modify_an_order_after_concurrent_arrival(
     setup.close()
 
 
+def test_arrival_snapshot_cannot_be_overtaken_by_a_metadata_update(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    path = tmp_path / "arrival-update-race.db"
+    setup = db.open_db(path)
+    wine = add_sample_wine(setup)
+    order = core.add_ordered_wine(
+        setup,
+        wine["id"],
+        3,
+        price_per_bottle=10,
+        vendor="Original vendor",
+    )
+    setup.close()
+
+    original_get = core.get_ordered_wine
+    arrival_has_read = threading.Event()
+    release_arrival = threading.Event()
+
+    def pause_arrival_after_read(conn, order_id):
+        result = original_get(conn, order_id)
+        if (
+            threading.current_thread().name == "arrival"
+            and not arrival_has_read.is_set()
+        ):
+            arrival_has_read.set()
+            assert release_arrival.wait(timeout=5)
+        return result
+
+    monkeypatch.setattr(core, "get_ordered_wine", pause_arrival_after_read)
+    errors: list[Exception] = []
+    update_started = threading.Event()
+    update_finished = threading.Event()
+
+    def arrive() -> None:
+        connection = db.open_db(path)
+        try:
+            core.mark_ordered_wine_arrived(connection, order["id"])
+        except (sqlite3.Error, ValueError, threading.BrokenBarrierError) as error:
+            errors.append(error)
+        finally:
+            connection.close()
+
+    def update() -> None:
+        connection = db.open_db(path)
+        try:
+            update_started.set()
+            core.update_ordered_wine(
+                connection,
+                order["id"],
+                quantity=5,
+                price_per_bottle=20,
+                vendor="Updated vendor",
+            )
+        except ValueError:
+            pass
+        except sqlite3.Error as error:
+            errors.append(error)
+        finally:
+            update_finished.set()
+            connection.close()
+
+    arrival_worker = threading.Thread(target=arrive, name="arrival")
+    arrival_worker.start()
+    assert arrival_has_read.wait(timeout=5)
+    update_worker = threading.Thread(target=update, name="metadata-update")
+    update_worker.start()
+    assert update_started.wait(timeout=5)
+    update_overtook_arrival = update_finished.wait(timeout=0.25)
+    release_arrival.set()
+    arrival_worker.join(timeout=10)
+    update_worker.join(timeout=10)
+
+    assert not update_overtook_arrival
+    assert errors == []
+    monkeypatch.setattr(core, "get_ordered_wine", original_get)
+    verify = db.open_db(path)
+    final = core.get_ordered_wine(verify, order["id"])
+    dossier = core.get_wine(verify, wine["id"])
+    assert final["status"] == "arrived"
+    assert dossier["quantity"] == final["quantity"]
+    assert dossier["purchases"][0]["quantity"] == final["quantity"]
+    assert dossier["purchases"][0]["price_per_bottle"] == final["price_per_bottle"]
+    assert dossier["purchases"][0]["vendor"] == final["vendor"]
+    verify.close()
+
+
 def test_concurrent_case_variant_email_replays_return_one_order(tmp_path: Path):
     path = tmp_path / "concurrent-email-replay.db"
     setup = db.open_db(path)
@@ -1181,6 +1255,39 @@ def test_concurrent_case_variant_email_replays_return_one_order(tmp_path: Path):
     verify = db.open_db(path)
     assert len(core.list_ordered_wines(verify)) == 1
     verify.close()
+
+
+def test_conflicting_replay_identities_do_not_modify_either_order(conn):
+    wine = add_sample_wine(conn)
+    first = core.add_ordered_wine(
+        conn,
+        wine["id"],
+        2,
+        vendor="First merchant",
+        order_reference="FIRST-1",
+        source_message_id="message-first",
+    )
+    second = core.add_ordered_wine(
+        conn,
+        wine["id"],
+        3,
+        vendor="Second merchant",
+        order_reference="SECOND-2",
+        source_message_id="message-second",
+    )
+
+    with pytest.raises(ValueError, match="conflicting ordered-wine identities"):
+        core.add_ordered_wine(
+            conn,
+            wine["id"],
+            99,
+            vendor="First merchant",
+            order_reference="FIRST-1",
+            source_message_id="message-second",
+        )
+
+    assert core.get_ordered_wine(conn, first["id"])["quantity"] == 2
+    assert core.get_ordered_wine(conn, second["id"])["quantity"] == 3
 
 
 def test_concurrent_source_message_updates_keep_the_first_committed_value(
@@ -1310,6 +1417,19 @@ def test_ordered_wine_rejects_boolean_quantities(conn):
         core.update_ordered_wine(conn, order["id"], quantity=False)
 
 
+@pytest.mark.parametrize("price", [True, "12.5"])
+def test_ordered_wine_core_rejects_coerced_prices(conn, price):
+    wine = add_sample_wine(conn)
+    with pytest.raises(ValueError, match="price_per_bottle must be a number"):
+        core.add_ordered_wine(conn, wine["id"], 1, price_per_bottle=price)
+
+
+def test_ordered_wine_core_rejects_boolean_wine_id(conn):
+    add_sample_wine(conn)
+    with pytest.raises(ValueError, match="wine_id must be an integer"):
+        core.add_ordered_wine(conn, True, 1)
+
+
 def test_ordered_wine_endpoints(client):
     wine_id = client.post(
         "/api/cellar/items",
@@ -1391,6 +1511,70 @@ def test_ordered_wine_endpoint_rejects_boolean_quantity(client):
 
 
 @pytest.mark.parametrize(
+    "overrides",
+    [
+        {"wine_id": True},
+        {"wine_id": "1"},
+        {"price_per_bottle": True},
+        {"price_per_bottle": "12.5"},
+    ],
+)
+def test_ordered_wine_endpoint_rejects_coerced_numbers(client, overrides):
+    wine_id = client.post(
+        "/api/cellar/items",
+        json={"producer": "Strict", "wine_name": "Numbers", "quantity": 0},
+    ).json()["id"]
+    response = client.post(
+        "/api/ordered-wines",
+        json={"wine_id": wine_id, "quantity": 1, **overrides},
+    )
+    assert response.status_code == 422
+
+
+def test_ordered_wine_mcp_rejects_coerced_numeric_arguments(conn):
+    wine = add_sample_wine(conn)
+    invalid_add_payloads = [
+        {"wine_id": True, "quantity": 1},
+        {"wine_id": str(wine["id"]), "quantity": 1},
+        {"wine_id": wine["id"], "quantity": True},
+        {"wine_id": wine["id"], "quantity": "1"},
+        {"wine_id": wine["id"], "quantity": 1, "price_per_bottle": True},
+        {"wine_id": wine["id"], "quantity": 1, "price_per_bottle": "12.5"},
+        {"wine_id": wine["id"], "quantity": 1, "price_per_bottle": float("inf")},
+        {"wine_id": wine["id"], "quantity": 1, "price_per_bottle": float("nan")},
+        {"wine_id": wine["id"], "quantity": 1, "price_per_bottle": -1},
+        {"wine_id": 0, "quantity": 1},
+        {"wine_id": wine["id"], "quantity": 0},
+    ]
+
+    for payload in invalid_add_payloads:
+        with pytest.raises(ToolError, match="validation error"):
+            asyncio.run(mcp_server.mcp.call_tool("ordered_wine_add", payload))
+
+    assert core.list_ordered_wines(conn) == []
+
+    asyncio.run(
+        mcp_server.mcp.call_tool(
+            "ordered_wine_add",
+            {"wine_id": wine["id"], "quantity": 1, "price_per_bottle": 12},
+        )
+    )
+    order = core.list_ordered_wines(conn)[0]
+
+    for tool_name, payload in [
+        ("ordered_wine_update", {"order_id": True, "notes": "wrong row"}),
+        ("ordered_wine_update", {"order_id": str(order["id"]), "notes": "wrong row"}),
+        ("ordered_wine_arrived", {"order_id": True}),
+        ("ordered_wine_arrived", {"order_id": str(order["id"])}),
+        ("ordered_wine_list", {"include_arrived": "true"}),
+    ]:
+        with pytest.raises(ToolError, match="validation error"):
+            asyncio.run(mcp_server.mcp.call_tool(tool_name, payload))
+
+    assert core.get_ordered_wine(conn, order["id"])["status"] == "ordered"
+
+
+@pytest.mark.parametrize(
     "payload",
     [
         {"currency": ""},
@@ -1462,3 +1646,59 @@ def test_failed_v4_migration_rolls_back_and_can_be_retried(
     db.migrate(connection)
     assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
     connection.close()
+
+
+def test_concurrent_migrations_recheck_version_after_acquiring_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    path = tmp_path / "concurrent-migration.db"
+    migrations = db._MIGRATIONS.copy()
+    monkeypatch.setattr(db, "_MIGRATIONS", migrations[:3])
+    monkeypatch.setattr(db, "SCHEMA_VERSION", 3)
+    setup = db.open_db(path)
+    setup.close()
+
+    monkeypatch.setattr(db, "_MIGRATIONS", migrations)
+    monkeypatch.setattr(db, "SCHEMA_VERSION", 4)
+    original_version = db._current_version
+    first_reads = threading.Barrier(2)
+    calls = threading.local()
+
+    def synchronize_first_version_read(conn):
+        version = original_version(conn)
+        count = getattr(calls, "count", 0)
+        calls.count = count + 1
+        if count == 0:
+            first_reads.wait(timeout=5)
+        return version
+
+    monkeypatch.setattr(db, "_current_version", synchronize_first_version_read)
+    errors: list[Exception] = []
+
+    def migrate() -> None:
+        connection = db.connect(path)
+        try:
+            db.migrate(connection)
+        except (sqlite3.Error, RuntimeError, threading.BrokenBarrierError) as error:
+            errors.append(error)
+        finally:
+            connection.close()
+
+    workers = [threading.Thread(target=migrate) for _ in range(2)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=10)
+
+    assert all(not worker.is_alive() for worker in workers)
+    assert errors == []
+    verify = db.connect(path)
+    assert verify.execute("PRAGMA user_version").fetchone()[0] == 4
+    assert (
+        verify.execute(
+            "SELECT COUNT(*) FROM sqlite_master "
+            "WHERE type='table' AND name='ordered_wines'"
+        ).fetchone()[0]
+        == 1
+    )
+    verify.close()

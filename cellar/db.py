@@ -404,6 +404,22 @@ def migrate(conn: sqlite3.Connection) -> None:
 
     conn.execute("BEGIN IMMEDIATE")
     try:
+        # Another connection may have migrated while this one waited for the
+        # write lock. Re-read the schema state before choosing migration steps.
+        version = _current_version(conn)
+        if version > SCHEMA_VERSION:
+            current_floor = _read_min_compatible(conn)
+            if current_floor is not None and current_floor > SCHEMA_VERSION:
+                raise RuntimeError(
+                    f"Database schema version {version} requires code at schema "
+                    f"version {current_floor} or newer, but this code is at "
+                    f"{SCHEMA_VERSION}. Update to a revision containing that migration."
+                )
+            conn.commit()
+            return
+        if version == SCHEMA_VERSION and _read_min_compatible(conn) == floor:
+            conn.commit()
+            return
         for index in range(version, SCHEMA_VERSION):
             _MIGRATIONS[index].run(conn)
             conn.execute("PRAGMA user_version = " + str(index + 1))
