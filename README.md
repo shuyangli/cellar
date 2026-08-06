@@ -32,6 +32,7 @@ wine-detail edits, review edits, and deletion of mistaken records.
 `wines` (labels + cached `quantity`) · `purchases` (price/vendor/date history) ·
 `inventory_events` (auditable ledger; every quantity change has an event) ·
 `tastings` (consumption + review: rating 0-100, notes, pairing, per-user) ·
+`ordered_wines` (paid bottles in transit + tracking; no inventory until arrival) ·
 `users` (multi-reviewer ready) · `photos` (label/receipt images) · `wishlist`.
 
 Data lives in `~/.local/share/cellar/` (`cellar.db`, `photos/`). Override with
@@ -44,7 +45,7 @@ synthesize purchase/event history for existing stock.
 ```bash
 uv sync                 # Python env + entry points in .venv/bin/
 cd ui && npm install && npm run build && cd ..
-uv run pytest           # 15 tests
+uv run pytest           # backend tests
 ```
 
 ## Run
@@ -82,9 +83,11 @@ hermes mcp test cellar
 Tools: `find_wine`, `add_wine`, `update_wine`, `log_purchase`, `log_tasting`,
 `adjust_inventory`, `get_wine`, `list_inventory`, `cellar_stats`,
 `drinking_window_alerts`, `attach_photo`, `wishlist_add`, `wishlist_list`,
-`wishlist_remove`, `query` (read-only SQL). Conventions: ISO dates, ratings 0-100, prices per
-bottle. See `docs/hermes-cellar-manager.md` for the recommended agent
-instructions (dedupe with `find_wine` before adding, enrich before logging).
+`wishlist_remove`, `ordered_wine_add`, `ordered_wine_list`,
+`ordered_wine_update`, `ordered_wine_arrived`, `query` (read-only SQL).
+Conventions: ISO dates, ratings 0-100, prices per bottle. See
+`docs/hermes-cellar-manager.md` for the recommended agent instructions,
+including the forwarded order/tracking email workflow.
 
 ## CLI
 
@@ -108,7 +111,9 @@ Original endpoints (kept): `GET /api/cellar`, `POST /api/cellar/items`,
 Added: `GET /api/wines/{id}` (full dossier), `POST /api/wines/{id}/purchases`,
 `POST /api/wines/{id}/tastings`, `PATCH /api/tastings/{id}`, `GET /api/stats`, `GET /api/drink-now`,
 `GET /api/tastings`, `GET /api/wishlist`, `POST /api/wishlist`,
-`DELETE /api/wishlist/{id}`, `GET /photos/{filename}`.
+`DELETE /api/wishlist/{id}`, `GET/POST /api/ordered-wines`,
+`PATCH /api/ordered-wines/{id}`, `POST /api/ordered-wines/{id}/arrive`,
+`GET /photos/{filename}`.
 
 ## UI development
 

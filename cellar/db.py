@@ -10,6 +10,8 @@ Schema versions (``PRAGMA user_version``):
   gains ``wine_type``/``grapes``. Existing stock is backfilled with synthesized
   purchase + event history so quantities stay auditable from day one.
 * ``3`` — ``wishlist`` gains ``recommended_by``.
+* ``4`` — ``ordered_wines`` tracks bottles paid for but not yet received, with
+  shipment metadata and an idempotent handoff into purchases/inventory.
 
 Forward compatibility
 ---------------------
@@ -171,8 +173,23 @@ CREATE INDEX idx_photos_wine_id ON photos(wine_id);
 """
 
 
+def _execute_schema(conn: sqlite3.Connection, schema: str) -> None:
+    """Execute a SQL script without sqlite3.executescript's implicit commit."""
+    statement = ""
+    for line in schema.splitlines(keepends=True):
+        statement += line
+        if not sqlite3.complete_statement(statement):
+            continue
+        sql = statement.strip()
+        if sql:
+            conn.execute(sql)
+        statement = ""
+    if statement.strip():
+        raise sqlite3.OperationalError("incomplete migration statement")
+
+
 def _migrate_v1(conn: sqlite3.Connection) -> None:
-    conn.executescript(_V1_SCHEMA)
+    _execute_schema(conn, _V1_SCHEMA)
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(wines)")}
     for name, ddl in _V1_WINE_COLUMNS.items():
         if name not in existing:
@@ -180,7 +197,7 @@ def _migrate_v1(conn: sqlite3.Connection) -> None:
 
 
 def _migrate_v2(conn: sqlite3.Connection) -> None:
-    conn.executescript(_V2_SCHEMA)
+    _execute_schema(conn, _V2_SCHEMA)
     conn.execute(
         "INSERT OR IGNORE INTO users (name, is_default) VALUES (?, 1)",
         (DEFAULT_USER_NAME,),
@@ -230,7 +247,47 @@ def _migrate_v3(conn: sqlite3.Connection) -> None:
     somewhere", but not for "a friend said to try this", which is how most
     entries actually arrive.
     """
-    conn.executescript(_V3_SCHEMA)
+    _execute_schema(conn, _V3_SCHEMA)
+
+
+_V4_SCHEMA = """
+CREATE TABLE ordered_wines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    wine_id INTEGER NOT NULL,
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    price_per_bottle REAL,
+    currency TEXT NOT NULL DEFAULT 'USD',
+    vendor TEXT,
+    order_reference TEXT,
+    ordered_on TEXT,
+    tracking_url TEXT,
+    expected_on TEXT,
+    status TEXT NOT NULL DEFAULT 'ordered'
+        CHECK (status IN ('ordered', 'arrived', 'cancelled')),
+    arrived_on TEXT,
+    purchase_id INTEGER,
+    source_message_id TEXT,
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (wine_id) REFERENCES wines(id),
+    FOREIGN KEY (purchase_id) REFERENCES purchases(id)
+);
+
+CREATE INDEX idx_ordered_wines_status ON ordered_wines(status, expected_on, id);
+CREATE INDEX idx_ordered_wines_wine_id ON ordered_wines(wine_id);
+CREATE UNIQUE INDEX idx_ordered_wines_reference_line
+    ON ordered_wines(vendor COLLATE NOCASE, order_reference COLLATE NOCASE, wine_id)
+    WHERE COALESCE(vendor, '') != '' AND COALESCE(order_reference, '') != '';
+CREATE UNIQUE INDEX idx_ordered_wines_source_line
+    ON ordered_wines(source_message_id, wine_id)
+    WHERE COALESCE(source_message_id, '') != '';
+"""
+
+
+def _migrate_v4(conn: sqlite3.Connection) -> None:
+    """Add the pre-arrival order ledger without changing existing inventory."""
+    _execute_schema(conn, _V4_SCHEMA)
 
 
 class Migration(NamedTuple):
@@ -254,6 +311,8 @@ _MIGRATIONS: list[Migration] = [
     Migration(_migrate_v2, min_compatible=1),
     # Purely additive: one nullable column on wishlist.
     Migration(_migrate_v3, min_compatible=1),
+    # Older code cannot safely delete wines/purchases referenced by this table.
+    Migration(_migrate_v4, min_compatible=4),
 ]
 SCHEMA_VERSION = len(_MIGRATIONS)
 
@@ -339,17 +398,23 @@ def migrate(conn: sqlite3.Connection) -> None:
         # here on — so read it as found and write nothing.
         return
 
-    for index in range(version, SCHEMA_VERSION):
-        _MIGRATIONS[index].run(conn)
-        conn.execute(f"PRAGMA user_version = {index + 1}")
-
-    # Record the floor (also backfilling databases migrated before tracking
-    # existed), but only when it would change — open_db runs per request and
-    # this is otherwise a write on every one.
     floor = _required_min_compatible()
-    if _read_min_compatible(conn) != floor:
-        _write_min_compatible(conn, floor)
-    conn.commit()
+    if version == SCHEMA_VERSION and _read_min_compatible(conn) == floor:
+        return
+
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        for index in range(version, SCHEMA_VERSION):
+            _MIGRATIONS[index].run(conn)
+            conn.execute("PRAGMA user_version = " + str(index + 1))
+
+        # Record the floor, also backfilling databases migrated before tracking.
+        if _read_min_compatible(conn) != floor:
+            _write_min_compatible(conn, floor)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def open_db(path: Path | None = None) -> sqlite3.Connection:
@@ -358,7 +423,13 @@ def open_db(path: Path | None = None) -> sqlite3.Connection:
     version = _current_version(conn)
     if version == 1:
         # An adopted old database may miss late-added v1 columns.
-        _migrate_v1(conn)
-        conn.execute("PRAGMA user_version = 1")
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            _migrate_v1(conn)
+            conn.execute("PRAGMA user_version = 1")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
     migrate(conn)
     return conn

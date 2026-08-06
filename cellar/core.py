@@ -11,6 +11,7 @@ bottle with an ISO currency code (default USD).
 from __future__ import annotations
 
 import datetime as dt
+import math
 import re
 import shutil
 import sqlite3
@@ -18,6 +19,7 @@ import uuid
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from . import config
 
@@ -54,6 +56,19 @@ TASTING_UPDATE_FIELDS = {
     "price_paid",
     "buy_again",
     "tasted_on",
+}
+
+ORDERED_WINE_UPDATE_FIELDS = {
+    "quantity",
+    "price_per_bottle",
+    "currency",
+    "vendor",
+    "order_reference",
+    "ordered_on",
+    "tracking_url",
+    "expected_on",
+    "source_message_id",
+    "notes",
 }
 
 
@@ -347,7 +362,7 @@ def _apply_event(
     )
 
 
-def log_purchase(
+def _record_purchase(
     conn: sqlite3.Connection,
     wine_id: int,
     quantity: int,
@@ -357,7 +372,8 @@ def log_purchase(
     purchase_date: str | None = None,
     source: str = "other",
     notes: str | None = None,
-) -> dict[str, Any]:
+) -> int:
+    """Write a purchase and its inventory event without committing."""
     if quantity < 1:
         raise ValueError("quantity must be at least 1")
     purchase_date = purchase_date or dt.date.today().isoformat()
@@ -389,6 +405,32 @@ def log_purchase(
         "purchase",
         f"bought {quantity}{vendor_note}",
         purchase_id=purchase_id,
+    )
+    assert purchase_id is not None
+    return purchase_id
+
+
+def log_purchase(
+    conn: sqlite3.Connection,
+    wine_id: int,
+    quantity: int,
+    price_per_bottle: float | None = None,
+    currency: str = "USD",
+    vendor: str | None = None,
+    purchase_date: str | None = None,
+    source: str = "other",
+    notes: str | None = None,
+) -> dict[str, Any]:
+    _record_purchase(
+        conn,
+        wine_id,
+        quantity,
+        price_per_bottle=price_per_bottle,
+        currency=currency,
+        vendor=vendor,
+        purchase_date=purchase_date,
+        source=source,
+        notes=notes,
     )
     conn.commit()
     return get_wine(conn, wine_id)
@@ -565,6 +607,15 @@ def delete_purchase(conn: sqlite3.Connection, purchase_id: int) -> dict[str, Any
     conn.execute("DELETE FROM inventory_events WHERE purchase_id = ?", (purchase_id,))
     conn.execute("UPDATE tastings SET purchase_id = NULL WHERE purchase_id = ?", (purchase_id,))
     conn.execute("UPDATE photos SET purchase_id = NULL WHERE purchase_id = ?", (purchase_id,))
+    conn.execute(
+        """
+        UPDATE ordered_wines
+        SET status = 'ordered', arrived_on = NULL, purchase_id = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE purchase_id = ?
+        """,
+        (purchase_id,),
+    )
     conn.execute("DELETE FROM purchases WHERE id = ?", (purchase_id,))
     if added:
         conn.execute(
@@ -584,7 +635,14 @@ def delete_wine(conn: sqlite3.Connection, wine_id: int) -> None:
         row["path"]
         for row in conn.execute("SELECT path FROM photos WHERE wine_id = ?", (wine_id,))
     ]
-    for table in ("inventory_events", "photos", "tastings", "wishlist", "purchases"):
+    for table in (
+        "inventory_events",
+        "photos",
+        "tastings",
+        "wishlist",
+        "ordered_wines",
+        "purchases",
+    ):
         conn.execute(f"DELETE FROM {table} WHERE wine_id = ?", (wine_id,))
     conn.execute("DELETE FROM wines WHERE id = ?", (wine_id,))
     conn.commit()
@@ -592,6 +650,279 @@ def delete_wine(conn: sqlite3.Connection, wine_id: int) -> None:
         target = config.photos_dir() / path
         if target.is_file():
             target.unlink()
+
+
+# ---------------------------------------------------------------------------
+# Ordered wines
+
+
+def _clean_ordered_wine_fields(fields: dict[str, Any]) -> dict[str, Any]:
+    unknown = set(fields) - ORDERED_WINE_UPDATE_FIELDS
+    if unknown:
+        raise ValueError(f"unknown ordered wine fields: {sorted(unknown)}")
+    cleaned: dict[str, Any] = {}
+    for key, value in fields.items():
+        if isinstance(value, str):
+            value = value.strip() or None
+        cleaned[key] = value
+    quantity = cleaned.get("quantity")
+    if quantity is not None:
+        if isinstance(quantity, bool) or not isinstance(quantity, int):
+            raise ValueError("quantity must be an integer")
+        if quantity < 1:
+            raise ValueError("quantity must be at least 1")
+    price = cleaned.get("price_per_bottle")
+    if price is not None:
+        if not math.isfinite(price):
+            raise ValueError("price_per_bottle must be finite")
+        if price < 0:
+            raise ValueError("price_per_bottle cannot be negative")
+    tracking_url = cleaned.get("tracking_url")
+    if tracking_url:
+        parsed = urlparse(tracking_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("tracking_url must use http or https")
+    currency = cleaned.get("currency")
+    if "currency" in cleaned and currency is None:
+        raise ValueError("currency must be a 3-letter code")
+    if currency is not None:
+        currency = currency.upper()
+        if re.fullmatch(r"[A-Z]{3}", currency) is None:
+            raise ValueError("currency must be a 3-letter code")
+        cleaned["currency"] = currency
+    for field in ("ordered_on", "expected_on"):
+        value = cleaned.get(field)
+        if value is None:
+            continue
+        try:
+            parsed_date = dt.date.fromisoformat(value)
+        except ValueError as error:
+            raise ValueError(f"{field} must be an ISO date (YYYY-MM-DD)") from error
+        if parsed_date.isoformat() != value:
+            raise ValueError(f"{field} must be an ISO date (YYYY-MM-DD)")
+    return cleaned
+
+
+def get_ordered_wine(conn: sqlite3.Connection, order_id: int) -> dict[str, Any]:
+    row = conn.execute(
+        """
+        SELECT ow.*, w.producer, w.wine_name, w.vintage, w.wine_type,
+               w.region, w.country, w.bottle_size_ml
+        FROM ordered_wines ow JOIN wines w ON w.id = ow.wine_id
+        WHERE ow.id = ?
+        """,
+        (order_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"no ordered wine with id {order_id}")
+    result = _row(row)
+    assert result is not None
+    return result
+
+
+def list_ordered_wines(
+    conn: sqlite3.Connection, include_arrived: bool = False
+) -> list[dict[str, Any]]:
+    where = "" if include_arrived else "WHERE ow.status = 'ordered'"
+    return _rows(
+        conn.execute(
+            f"""
+            SELECT ow.*, w.producer, w.wine_name, w.vintage, w.wine_type,
+                   w.region, w.country, w.bottle_size_ml
+            FROM ordered_wines ow JOIN wines w ON w.id = ow.wine_id
+            {where}
+            ORDER BY CASE WHEN ow.status = 'ordered' THEN 0 ELSE 1 END,
+                     COALESCE(ow.expected_on, '9999-12-31'), ow.created_at DESC, ow.id DESC
+            """
+        ).fetchall()
+    )
+
+
+def _find_existing_ordered_wine(
+    conn: sqlite3.Connection, wine_id: int, fields: dict[str, Any]
+) -> sqlite3.Row | None:
+    existing = None
+    if fields.get("vendor") and fields.get("order_reference"):
+        existing = conn.execute(
+            """
+            SELECT id, status FROM ordered_wines
+            WHERE vendor = ? COLLATE NOCASE AND order_reference = ? COLLATE NOCASE
+              AND wine_id = ?
+            """,
+            (fields["vendor"], fields["order_reference"], wine_id),
+        ).fetchone()
+    if existing is None and fields.get("source_message_id"):
+        existing = conn.execute(
+            """
+            SELECT id, status FROM ordered_wines
+            WHERE source_message_id = ? AND wine_id = ?
+            """,
+            (fields["source_message_id"], wine_id),
+        ).fetchone()
+    return existing
+
+
+def add_ordered_wine(
+    conn: sqlite3.Connection,
+    wine_id: int,
+    quantity: int,
+    price_per_bottle: float | None = None,
+    currency: str | None = None,
+    vendor: str | None = None,
+    order_reference: str | None = None,
+    ordered_on: str | None = None,
+    tracking_url: str | None = None,
+    expected_on: str | None = None,
+    source_message_id: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any]:
+    if conn.execute("SELECT 1 FROM wines WHERE id = ?", (wine_id,)).fetchone() is None:
+        raise ValueError(f"no wine with id {wine_id}")
+    submitted: dict[str, Any] = {
+        "quantity": quantity,
+        "price_per_bottle": price_per_bottle,
+        "vendor": vendor,
+        "order_reference": order_reference,
+        "tracking_url": tracking_url,
+        "expected_on": expected_on,
+        "source_message_id": source_message_id,
+        "notes": notes,
+    }
+    # Keep omitted create defaults out of replay updates. A later tracking
+    # email should not overwrite the original currency/order date merely
+    # because those fields were absent from the notice.
+    if currency is not None:
+        submitted["currency"] = currency
+    if ordered_on is not None and ordered_on.strip():
+        submitted["ordered_on"] = ordered_on
+    cleaned = _clean_ordered_wine_fields(submitted)
+    existing = _find_existing_ordered_wine(conn, wine_id, cleaned)
+    if existing:
+        if existing["status"] != "ordered":
+            return get_ordered_wine(conn, existing["id"])
+        # Forwarded confirmations and later tracking notices often repeat the
+        # same line. Merge useful fields rather than creating another order.
+        updates = {key: value for key, value in cleaned.items() if value is not None}
+        return update_ordered_wine(conn, existing["id"], **updates)
+
+    merge_fields = cleaned.copy()
+    cleaned.setdefault("currency", "USD")
+    cleaned.setdefault(
+        "ordered_on", dt.datetime.now().astimezone().date().isoformat()
+    )
+    columns = ", ".join(["wine_id", *cleaned])
+    placeholders = ", ".join("?" for _ in range(len(cleaned) + 1))
+    try:
+        cursor = conn.execute(
+            f"INSERT INTO ordered_wines ({columns}) VALUES ({placeholders})",
+            (wine_id, *cleaned.values()),
+        )
+    except sqlite3.IntegrityError:
+        # A concurrent replay may win after our lookup but before this insert.
+        # Roll back this attempt, then merge into the committed winner.
+        conn.rollback()
+        existing = _find_existing_ordered_wine(conn, wine_id, cleaned)
+        if existing is None:
+            raise
+        if existing["status"] != "ordered":
+            return get_ordered_wine(conn, existing["id"])
+        updates = {
+            key: value for key, value in merge_fields.items() if value is not None
+        }
+        return update_ordered_wine(conn, existing["id"], **updates)
+    conn.commit()
+    assert cursor.lastrowid is not None
+    return get_ordered_wine(conn, cursor.lastrowid)
+
+
+def update_ordered_wine(
+    conn: sqlite3.Connection, order_id: int, **fields: Any
+) -> dict[str, Any]:
+    if not fields:
+        raise ValueError("no fields to update")
+    current = get_ordered_wine(conn, order_id)
+    if current["status"] != "ordered":
+        raise ValueError(f"ordered wine has already {current['status']}")
+    # The first source message is the immutable replay key for a line. Later
+    # tracking notices may enrich the row but must not discard that key.
+    if current["source_message_id"] and "source_message_id" in fields:
+        fields.pop("source_message_id")
+    if not fields:
+        return current
+    cleaned = _clean_ordered_wine_fields(fields)
+    assignments = ", ".join(
+        (
+            "source_message_id = COALESCE(source_message_id, ?)"
+            if key == "source_message_id"
+            else f"{key} = ?"
+        )
+        for key in cleaned
+    )
+    cursor = conn.execute(
+        f"""
+        UPDATE ordered_wines
+        SET {assignments}, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND status = 'ordered'
+        """,
+        (*cleaned.values(), order_id),
+    )
+    if cursor.rowcount != 1:
+        conn.rollback()
+        latest = get_ordered_wine(conn, order_id)
+        raise ValueError(f"ordered wine has already {latest['status']}")
+    conn.commit()
+    return get_ordered_wine(conn, order_id)
+
+
+def mark_ordered_wine_arrived(
+    conn: sqlite3.Connection, order_id: int, arrived_on: str | None = None
+) -> dict[str, Any]:
+    order = get_ordered_wine(conn, order_id)
+    if order["status"] == "arrived":
+        return order
+    if order["status"] != "ordered":
+        raise ValueError(f"ordered wine has already {order['status']}")
+    arrived_on = (
+        arrived_on or dt.datetime.now().astimezone().date().isoformat()
+    ).strip()
+    try:
+        parsed_arrival = dt.date.fromisoformat(arrived_on)
+    except ValueError as error:
+        raise ValueError("arrived_on must be an ISO date (YYYY-MM-DD)") from error
+    if parsed_arrival.isoformat() != arrived_on:
+        raise ValueError("arrived_on must be an ISO date (YYYY-MM-DD)")
+    try:
+        purchase_id = _record_purchase(
+            conn,
+            order["wine_id"],
+            order["quantity"],
+            price_per_bottle=order["price_per_bottle"],
+            currency=order["currency"],
+            vendor=order["vendor"],
+            purchase_date=order["ordered_on"] or arrived_on,
+            source="online",
+            notes=order["notes"],
+        )
+        cursor = conn.execute(
+            """
+            UPDATE ordered_wines
+            SET status = 'arrived', arrived_on = ?, purchase_id = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'ordered'
+            """,
+            (arrived_on, purchase_id, order_id),
+        )
+        if cursor.rowcount != 1:
+            # Another request received the same order while this connection was
+            # waiting for SQLite's write lock. Undo this request's purchase,
+            # event, and quantity update before returning the winner's row.
+            conn.rollback()
+            return get_ordered_wine(conn, order_id)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return get_ordered_wine(conn, order_id)
 
 
 # ---------------------------------------------------------------------------

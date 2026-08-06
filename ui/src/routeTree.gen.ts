@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WishlistRouteImport } from './routes/wishlist'
 import { Route as StatsRouteImport } from './routes/stats'
+import { Route as OrderedRouteImport } from './routes/ordered'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as DrinkNowRouteImport } from './routes/drink-now'
 import { Route as IndexRouteImport } from './routes/index'
@@ -24,6 +25,11 @@ const WishlistRoute = WishlistRouteImport.update({
 const StatsRoute = StatsRouteImport.update({
   id: '/stats',
   path: '/stats',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrderedRoute = OrderedRouteImport.update({
+  id: '/ordered',
+  path: '/ordered',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HistoryRoute = HistoryRouteImport.update({
@@ -51,6 +57,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/drink-now': typeof DrinkNowRoute
   '/history': typeof HistoryRoute
+  '/ordered': typeof OrderedRoute
   '/stats': typeof StatsRoute
   '/wishlist': typeof WishlistRoute
   '/wine/$wineId': typeof WineWineIdRoute
@@ -59,6 +66,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/drink-now': typeof DrinkNowRoute
   '/history': typeof HistoryRoute
+  '/ordered': typeof OrderedRoute
   '/stats': typeof StatsRoute
   '/wishlist': typeof WishlistRoute
   '/wine/$wineId': typeof WineWineIdRoute
@@ -68,6 +76,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/drink-now': typeof DrinkNowRoute
   '/history': typeof HistoryRoute
+  '/ordered': typeof OrderedRoute
   '/stats': typeof StatsRoute
   '/wishlist': typeof WishlistRoute
   '/wine/$wineId': typeof WineWineIdRoute
@@ -78,16 +87,25 @@ export interface FileRouteTypes {
     | '/'
     | '/drink-now'
     | '/history'
+    | '/ordered'
     | '/stats'
     | '/wishlist'
     | '/wine/$wineId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/drink-now' | '/history' | '/stats' | '/wishlist' | '/wine/$wineId'
+  to:
+    | '/'
+    | '/drink-now'
+    | '/history'
+    | '/ordered'
+    | '/stats'
+    | '/wishlist'
+    | '/wine/$wineId'
   id:
     | '__root__'
     | '/'
     | '/drink-now'
     | '/history'
+    | '/ordered'
     | '/stats'
     | '/wishlist'
     | '/wine/$wineId'
@@ -97,6 +115,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DrinkNowRoute: typeof DrinkNowRoute
   HistoryRoute: typeof HistoryRoute
+  OrderedRoute: typeof OrderedRoute
   StatsRoute: typeof StatsRoute
   WishlistRoute: typeof WishlistRoute
   WineWineIdRoute: typeof WineWineIdRoute
@@ -116,6 +135,13 @@ declare module '@tanstack/react-router' {
       path: '/stats'
       fullPath: '/stats'
       preLoaderRoute: typeof StatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ordered': {
+      id: '/ordered'
+      path: '/ordered'
+      fullPath: '/ordered'
+      preLoaderRoute: typeof OrderedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/history': {
@@ -153,6 +179,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DrinkNowRoute: DrinkNowRoute,
   HistoryRoute: HistoryRoute,
+  OrderedRoute: OrderedRoute,
   StatsRoute: StatsRoute,
   WishlistRoute: WishlistRoute,
   WineWineIdRoute: WineWineIdRoute,
