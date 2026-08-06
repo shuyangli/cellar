@@ -109,6 +109,34 @@ export type WishlistEntry = {
   quantity: number
 }
 
+/** A purchased wine that has not yet been received into physical inventory. */
+export type OrderedWine = {
+  id: number
+  wine_id: number
+  quantity: number
+  price_per_bottle: number | null
+  currency: string
+  vendor: string | null
+  order_reference: string | null
+  ordered_on: string | null
+  tracking_url: string | null
+  expected_on: string | null
+  status: 'ordered' | 'arrived' | 'cancelled'
+  arrived_on: string | null
+  purchase_id: number | null
+  source_message_id: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+  producer: string
+  wine_name: string
+  vintage: string | null
+  wine_type: string | null
+  region: string | null
+  country: string | null
+  bottle_size_ml: number | null
+}
+
 export type InventoryEvent = {
   id: number
   wine_id: number
@@ -268,6 +296,13 @@ export function fetchWishlist(): Promise<Array<WishlistEntry>> {
   return fetchJson<Array<WishlistEntry>>('/api/wishlist')
 }
 
+export function fetchOrderedWines(
+  includeArrived = false,
+): Promise<Array<OrderedWine>> {
+  const suffix = includeArrived ? '?include_arrived=true' : ''
+  return fetchJson<Array<OrderedWine>>(`/api/ordered-wines${suffix}`)
+}
+
 export function photoUrl(path: string): string {
   return `${apiBase()}/photos/${path}`
 }
@@ -343,6 +378,18 @@ export function adjustInventory(
     reason,
     event_type: eventType,
   })
+}
+
+export function markOrderedWineArrived(
+  orderId: number,
+  arrivedOn = '',
+): Promise<OrderedWine> {
+  const body = arrivedOn ? { arrived_on: arrivedOn } : {}
+  return mutate<OrderedWine>(
+    `/api/ordered-wines/${orderId}/arrive`,
+    'POST',
+    body,
+  )
 }
 
 /** Fields describing a wine we tasted somewhere but never owned. */

@@ -901,3 +901,564 @@ def test_tasting_endpoint_attributes_and_renders_initials(client):
     }
     history = client.get("/api/tastings").json()
     assert {t["user_initials"] for t in history} == {"S", "A"}
+
+
+# ---------------------------------------------------------------------------
+# Ordered wines
+
+
+def test_ordered_wine_round_trip_and_tracking_update(conn):
+    wine = add_sample_wine(conn)
+    order = core.add_ordered_wine(
+        conn,
+        wine["id"],
+        4,
+        vendor="Crush Wine & Spirits",
+        order_reference="CW-123",
+        ordered_on="2026-08-01",
+        price_per_bottle=52.50,
+        tracking_url="https://www.ups.com/track?loc=en_US&tracknum=1Z999",
+        expected_on="2026-08-07",
+        source_message_id="gmail-message-1",
+    )
+
+    assert order["status"] == "ordered"
+    assert order["quantity"] == 4
+    assert order["producer"] == wine["producer"]
+    assert core.list_ordered_wines(conn) == [order]
+
+    updated = core.update_ordered_wine(
+        conn,
+        order["id"],
+        tracking_url="https://tools.usps.com/go/TrackConfirmAction?tLabels=9400",
+        expected_on="2026-08-08",
+        source_message_id="gmail-message-2",
+    )
+    assert updated["tracking_url"].startswith("https://tools.usps.com/")
+    assert updated["expected_on"] == "2026-08-08"
+    assert updated["source_message_id"] == "gmail-message-1"
+
+
+def test_ordered_wine_email_replay_updates_existing_order_line(conn):
+    wine = add_sample_wine(conn)
+    first = core.add_ordered_wine(
+        conn,
+        wine["id"],
+        2,
+        vendor="Kogod Wine Merchant",
+        order_reference="ORDER-42",
+        ordered_on="2026-01-01",
+        currency="EUR",
+        source_message_id="confirmation-message",
+    )
+    replayed = core.add_ordered_wine(
+        conn,
+        wine["id"],
+        2,
+        vendor="Kogod Wine Merchant",
+        order_reference="ORDER-42",
+        tracking_url="https://www.fedex.com/fedextrack/?trknbr=123",
+        source_message_id="tracking-message",
+    )
+
+    assert replayed["id"] == first["id"]
+    assert replayed["tracking_url"].startswith("https://www.fedex.com/")
+    assert replayed["source_message_id"] == "confirmation-message"
+    assert replayed["ordered_on"] == "2026-01-01"
+    assert replayed["currency"] == "EUR"
+    assert len(core.list_ordered_wines(conn)) == 1
+
+
+def test_ordered_wine_email_message_replay_is_idempotent_without_order_reference(conn):
+    wine = add_sample_wine(conn)
+    first = core.add_ordered_wine(
+        conn,
+        wine["id"],
+        1,
+        vendor="Small Importer",
+        source_message_id="gmail-message-unique",
+    )
+    replayed = core.add_ordered_wine(
+        conn,
+        wine["id"],
+        1,
+        vendor="Small Importer",
+        source_message_id="gmail-message-unique",
+        tracking_url="https://www.ups.com/track?tracknum=1Z1",
+    )
+
+    assert replayed["id"] == first["id"]
+    assert len(core.list_ordered_wines(conn)) == 1
+
+
+def test_arriving_ordered_wine_adds_inventory_once(conn):
+    wine = add_sample_wine(conn)
+    order = core.add_ordered_wine(
+        conn,
+        wine["id"],
+        3,
+        vendor="Chambers Street Wines",
+        ordered_on="2026-08-01",
+        price_per_bottle=74.0,
+        currency="USD",
+        notes="summer allocation",
+    )
+
+    arrived = core.mark_ordered_wine_arrived(conn, order["id"], arrived_on="2026-08-06")
+    assert arrived["status"] == "arrived"
+    assert arrived["arrived_on"] == "2026-08-06"
+    assert arrived["purchase_id"] is not None
+
+    dossier = core.get_wine(conn, wine["id"])
+    assert dossier["quantity"] == 3
+    assert len(dossier["purchases"]) == 1
+    assert dossier["purchases"][0]["purchase_date"] == "2026-08-01"
+    assert dossier["purchases"][0]["vendor"] == "Chambers Street Wines"
+
+    # Double clicks / retried API requests are idempotent.
+    again = core.mark_ordered_wine_arrived(conn, order["id"], arrived_on="2026-08-07")
+    assert again["purchase_id"] == arrived["purchase_id"]
+    assert core.get_wine(conn, wine["id"])["quantity"] == 3
+    assert core.list_ordered_wines(conn) == []
+    assert core.list_ordered_wines(conn, include_arrived=True) == [again]
+
+
+def test_concurrent_arrival_requests_only_add_inventory_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    path = tmp_path / "concurrent-arrival.db"
+    setup = db.open_db(path)
+    wine = add_sample_wine(setup)
+    order = core.add_ordered_wine(setup, wine["id"], 3)
+    setup.close()
+
+    original_get = core.get_ordered_wine
+    reads = threading.local()
+    both_read_ordered = threading.Barrier(2)
+
+    def synchronized_first_read(conn, order_id):
+        result = original_get(conn, order_id)
+        count = getattr(reads, "count", 0)
+        reads.count = count + 1
+        if count == 0:
+            both_read_ordered.wait(timeout=5)
+        return result
+
+    monkeypatch.setattr(core, "get_ordered_wine", synchronized_first_read)
+    errors: list[Exception] = []
+
+    def arrive() -> None:
+        connection = db.open_db(path)
+        try:
+            core.mark_ordered_wine_arrived(connection, order["id"])
+        except (sqlite3.Error, ValueError, threading.BrokenBarrierError) as error:
+            errors.append(error)
+        finally:
+            connection.close()
+
+    workers = [threading.Thread(target=arrive) for _ in range(2)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=10)
+
+    assert all(not worker.is_alive() for worker in workers)
+    assert errors == []
+    verify = db.open_db(path)
+    assert core.get_wine(verify, wine["id"])["quantity"] == 3
+    assert len(core.get_wine(verify, wine["id"])["purchases"]) == 1
+    verify.close()
+
+
+def test_update_cannot_modify_an_order_after_concurrent_arrival(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    path = tmp_path / "update-arrival-race.db"
+    setup = db.open_db(path)
+    wine = add_sample_wine(setup)
+    order = core.add_ordered_wine(setup, wine["id"], 3)
+
+    original_get = core.get_ordered_wine
+    stale_read_complete = threading.Event()
+    arrival_complete = threading.Event()
+    first_update_read = True
+
+    def pause_stale_update(conn, order_id):
+        nonlocal first_update_read
+        result = original_get(conn, order_id)
+        if threading.current_thread().name == "stale-order-update" and first_update_read:
+            first_update_read = False
+            stale_read_complete.set()
+            assert arrival_complete.wait(timeout=5)
+        return result
+
+    monkeypatch.setattr(core, "get_ordered_wine", pause_stale_update)
+    update_errors: list[ValueError] = []
+
+    def update_quantity() -> None:
+        connection = db.open_db(path)
+        try:
+            core.update_ordered_wine(connection, order["id"], quantity=5)
+        except ValueError as error:
+            update_errors.append(error)
+        finally:
+            connection.close()
+
+    worker = threading.Thread(target=update_quantity, name="stale-order-update")
+    worker.start()
+    assert stale_read_complete.wait(timeout=5)
+    arrived = core.mark_ordered_wine_arrived(setup, order["id"])
+    arrival_complete.set()
+    worker.join(timeout=10)
+
+    assert not worker.is_alive()
+    assert len(update_errors) == 1
+    final = core.get_ordered_wine(setup, order["id"])
+    assert final["status"] == "arrived"
+    assert final["quantity"] == 3
+    assert arrived["purchase_id"] == final["purchase_id"]
+    dossier = core.get_wine(setup, wine["id"])
+    assert dossier["quantity"] == 3
+    assert dossier["purchases"][0]["quantity"] == 3
+    setup.close()
+
+
+def test_concurrent_case_variant_email_replays_return_one_order(tmp_path: Path):
+    path = tmp_path / "concurrent-email-replay.db"
+    setup = db.open_db(path)
+    wine = add_sample_wine(setup)
+    setup.close()
+    both_lookups_complete = threading.Barrier(2)
+
+    class SynchronizedLookupConnection(sqlite3.Connection):
+        def execute(self, sql, parameters=()):
+            cursor = super().execute(sql, parameters)
+            if (
+                "vendor = ? COLLATE NOCASE" in sql
+                and not getattr(self, "_first_lookup_done", False)
+            ):
+                self._first_lookup_done = True
+                both_lookups_complete.wait(timeout=5)
+            return cursor
+
+    results: list[dict] = []
+    errors: list[sqlite3.Error] = []
+
+    def replay(vendor: str, reference: str) -> None:
+        connection = sqlite3.connect(
+            path, timeout=10, factory=SynchronizedLookupConnection
+        )
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        try:
+            results.append(
+                core.add_ordered_wine(
+                    connection,
+                    wine["id"],
+                    2,
+                    vendor=vendor,
+                    order_reference=reference,
+                )
+            )
+        except sqlite3.Error as error:
+            errors.append(error)
+        finally:
+            connection.close()
+
+    workers = [
+        threading.Thread(target=replay, args=("Merchant", "ORDER-9")),
+        threading.Thread(target=replay, args=("merchant", "order-9")),
+    ]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=10)
+
+    assert all(not worker.is_alive() for worker in workers)
+    assert errors == []
+    assert len(results) == 2
+    assert results[0]["id"] == results[1]["id"]
+    verify = db.open_db(path)
+    assert len(core.list_ordered_wines(verify)) == 1
+    verify.close()
+
+
+def test_concurrent_source_message_updates_keep_the_first_committed_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    path = tmp_path / "source-message-race.db"
+    setup = db.open_db(path)
+    wine = add_sample_wine(setup)
+    order = core.add_ordered_wine(setup, wine["id"], 1)
+    setup.close()
+    both_read_empty = threading.Barrier(2)
+    first_committed = threading.Event()
+    reads = threading.local()
+    original_get = core.get_ordered_wine
+
+    def synchronize_initial_reads(conn, order_id):
+        result = original_get(conn, order_id)
+        count = getattr(reads, "count", 0)
+        reads.count = count + 1
+        if count == 0:
+            both_read_empty.wait(timeout=5)
+        return result
+
+    monkeypatch.setattr(core, "get_ordered_wine", synchronize_initial_reads)
+
+    class OrderedSourceConnection(sqlite3.Connection):
+        def execute(self, sql, parameters=()):
+            if (
+                threading.current_thread().name == "later-source"
+                and "UPDATE ordered_wines" in sql
+            ):
+                assert first_committed.wait(timeout=5)
+            return super().execute(sql, parameters)
+
+    errors: list[sqlite3.Error] = []
+
+    def set_source(source: str) -> None:
+        connection = sqlite3.connect(path, timeout=10, factory=OrderedSourceConnection)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        try:
+            core.update_ordered_wine(
+                connection, order["id"], source_message_id=source
+            )
+            if threading.current_thread().name == "first-source":
+                first_committed.set()
+        except sqlite3.Error as error:
+            errors.append(error)
+        finally:
+            connection.close()
+
+    first = threading.Thread(
+        target=set_source, args=("first-committed",), name="first-source"
+    )
+    later = threading.Thread(
+        target=set_source, args=("later-overwrite",), name="later-source"
+    )
+    first.start()
+    later.start()
+    first.join(timeout=10)
+    later.join(timeout=10)
+
+    assert not first.is_alive() and not later.is_alive()
+    assert errors == []
+    monkeypatch.setattr(core, "get_ordered_wine", original_get)
+    verify = db.open_db(path)
+    assert core.get_ordered_wine(verify, order["id"])["source_message_id"] == (
+        "first-committed"
+    )
+    verify.close()
+
+
+def test_deleting_arrival_purchase_restores_order_to_outstanding(conn):
+    wine = add_sample_wine(conn)
+    order = core.add_ordered_wine(conn, wine["id"], 2)
+    arrived = core.mark_ordered_wine_arrived(conn, order["id"])
+
+    core.delete_purchase(conn, arrived["purchase_id"])
+
+    [restored] = core.list_ordered_wines(conn)
+    assert restored["id"] == order["id"]
+    assert restored["status"] == "ordered"
+    assert restored["arrived_on"] is None
+    assert restored["purchase_id"] is None
+    assert core.get_wine(conn, wine["id"])["quantity"] == 0
+
+
+def test_ordered_wine_rejects_bad_tracking_urls_and_updates_after_arrival(conn):
+    wine = add_sample_wine(conn)
+    with pytest.raises(ValueError, match="tracking_url must use http or https"):
+        core.add_ordered_wine(conn, wine["id"], 1, tracking_url="javascript:alert(1)")
+
+    order = core.add_ordered_wine(conn, wine["id"], 1)
+    core.mark_ordered_wine_arrived(conn, order["id"])
+    with pytest.raises(ValueError, match="already arrived"):
+        core.update_ordered_wine(conn, order["id"], quantity=2)
+
+
+def test_ordered_wine_validates_currency_and_iso_dates(conn):
+    wine = add_sample_wine(conn)
+    with pytest.raises(ValueError, match="currency must be a 3-letter code"):
+        core.add_ordered_wine(conn, wine["id"], 1, currency="US dollars")
+    with pytest.raises(ValueError, match="ordered_on must be an ISO date"):
+        core.add_ordered_wine(conn, wine["id"], 1, ordered_on="tomorrow")
+
+    order = core.add_ordered_wine(conn, wine["id"], 1)
+    with pytest.raises(ValueError, match="expected_on must be an ISO date"):
+        core.update_ordered_wine(conn, order["id"], expected_on="next week")
+    with pytest.raises(ValueError, match="arrived_on must be an ISO date"):
+        core.mark_ordered_wine_arrived(conn, order["id"], arrived_on="soon")
+
+
+def test_ordered_wine_rejects_non_finite_prices(conn):
+    wine = add_sample_wine(conn)
+    for price in (float("inf"), float("-inf"), float("nan")):
+        with pytest.raises(ValueError, match="price_per_bottle must be finite"):
+            core.add_ordered_wine(conn, wine["id"], 1, price_per_bottle=price)
+
+
+def test_ordered_wine_rejects_boolean_quantities(conn):
+    wine = add_sample_wine(conn)
+    with pytest.raises(ValueError, match="quantity must be an integer"):
+        core.add_ordered_wine(conn, wine["id"], True)
+
+    order = core.add_ordered_wine(conn, wine["id"], 1)
+    with pytest.raises(ValueError, match="quantity must be an integer"):
+        core.update_ordered_wine(conn, order["id"], quantity=False)
+
+
+def test_ordered_wine_endpoints(client):
+    wine_id = client.post(
+        "/api/cellar/items",
+        json={"producer": "Camille Jacquet", "wine_name": "Le Mesnil", "quantity": 0},
+    ).json()["id"]
+    created = client.post(
+        "/api/ordered-wines",
+        json={
+            "wine_id": wine_id,
+            "quantity": 4,
+            "vendor": "Importer",
+            "order_reference": "A-9",
+            "tracking_url": "https://www.ups.com/track?tracknum=1Z9",
+        },
+    )
+    assert created.status_code == 201
+    order_id = created.json()["id"]
+
+    listed = client.get("/api/ordered-wines").json()
+    assert [item["id"] for item in listed] == [order_id]
+    assert listed[0]["producer"] == "Camille Jacquet"
+
+    patched = client.patch(
+        f"/api/ordered-wines/{order_id}",
+        json={"expected_on": "2026-08-10"},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["expected_on"] == "2026-08-10"
+
+    arrived = client.post(
+        f"/api/ordered-wines/{order_id}/arrive",
+        json={"arrived_on": "2026-08-09"},
+    )
+    assert arrived.status_code == 200
+    assert arrived.json()["status"] == "arrived"
+    assert client.get("/api/ordered-wines").json() == []
+    assert client.get("/api/cellar").json()["summary"]["labels"]["bottles"] == 4
+
+
+def test_ordered_wine_arrival_accepts_the_ui_default_payload(client):
+    wine_id = client.post(
+        "/api/cellar/items",
+        json={"producer": "Default", "wine_name": "Arrival", "quantity": 0},
+    ).json()["id"]
+    order_id = client.post(
+        "/api/ordered-wines", json={"wine_id": wine_id, "quantity": 1}
+    ).json()["id"]
+
+    response = client.post(
+        f"/api/ordered-wines/{order_id}/arrive", json={"arrived_on": ""}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "arrived"
+
+
+def test_ordered_wine_endpoint_rejects_non_finite_price(client):
+    wine_id = client.post(
+        "/api/cellar/items",
+        json={"producer": "Finite", "wine_name": "Only", "quantity": 0},
+    ).json()["id"]
+    response = client.post(
+        "/api/ordered-wines",
+        content=f'{{"wine_id":{wine_id},"quantity":1,"price_per_bottle":1e999}}',
+        headers={"content-type": "application/json"},
+    )
+    assert response.status_code == 422
+
+
+def test_ordered_wine_endpoint_rejects_boolean_quantity(client):
+    wine_id = client.post(
+        "/api/cellar/items",
+        json={"producer": "Strict", "wine_name": "Quantity", "quantity": 0},
+    ).json()["id"]
+    response = client.post(
+        "/api/ordered-wines", json={"wine_id": wine_id, "quantity": True}
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"currency": ""},
+        {"currency": "US dollars"},
+        {"ordered_on": "tomorrow"},
+        {"expected_on": "next week"},
+    ],
+)
+def test_ordered_wine_endpoint_rejects_invalid_metadata(client, payload):
+    wine_id = client.post(
+        "/api/cellar/items",
+        json={"producer": "P", "wine_name": "W", "quantity": 0},
+    ).json()["id"]
+    response = client.post(
+        "/api/ordered-wines",
+        json={"wine_id": wine_id, "quantity": 1, **payload},
+    )
+    assert response.status_code == 422
+
+
+def test_v4_schema_refuses_older_code_that_cannot_manage_ordered_wines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    path = tmp_path / "future.db"
+    connection = db.open_db(path)
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
+    connection.close()
+
+    legacy = db.connect(path)
+    monkeypatch.setattr(db, "_MIGRATIONS", db._MIGRATIONS[:3])
+    monkeypatch.setattr(db, "SCHEMA_VERSION", 3)
+    with pytest.raises(RuntimeError, match="requires code at schema version 4 or newer"):
+        db.migrate(legacy)
+    legacy.close()
+
+
+def test_failed_v4_migration_rolls_back_and_can_be_retried(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    path = tmp_path / "interrupted-migration.db"
+    migrations = db._MIGRATIONS.copy()
+    monkeypatch.setattr(db, "_MIGRATIONS", migrations[:3])
+    monkeypatch.setattr(db, "SCHEMA_VERSION", 3)
+    connection = db.open_db(path)
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+
+    def fail_mid_migration(conn):
+        conn.execute("CREATE TABLE ordered_wines (id INTEGER PRIMARY KEY)")
+        raise RuntimeError("simulated index failure")
+
+    monkeypatch.setattr(
+        db,
+        "_MIGRATIONS",
+        [*migrations[:3], db.Migration(fail_mid_migration, min_compatible=4)],
+    )
+    monkeypatch.setattr(db, "SCHEMA_VERSION", 4)
+    with pytest.raises(RuntimeError, match="simulated index failure"):
+        db.migrate(connection)
+
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert (
+        connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ordered_wines'"
+        ).fetchone()
+        is None
+    )
+
+    monkeypatch.setattr(db, "_MIGRATIONS", migrations)
+    db.migrate(connection)
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
+    connection.close()

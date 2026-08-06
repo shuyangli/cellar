@@ -8,6 +8,9 @@ agent-platform surface. Binds to localhost; tailnet access goes through
 
 from __future__ import annotations
 
+import datetime as dt
+import math
+import re
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,9 +18,10 @@ from typing import Any
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import config, core, db
@@ -33,6 +37,24 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Wine Cellar", lifespan=lifespan)
+
+
+def _json_safe(value: Any) -> Any:
+    """Make validation details safe for strict JSON responses."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_response(_: Request, error: RequestValidationError):
+    return JSONResponse(status_code=422, content={"detail": _json_safe(error.errors())})
 
 
 def cache_control_value(path: str, content_type: str) -> str:
@@ -166,6 +188,88 @@ class WishlistCreate(BaseModel):
     reason: str = ""
     shop_name: str = ""
     listed_price: float | None = Field(default=None, ge=0)
+
+
+def _validated_currency(value: str | None) -> str | None:
+    if value is None:
+        return None
+    currency = value.strip().upper()
+    if re.fullmatch(r"[A-Z]{3}", currency) is None:
+        raise ValueError("currency must be a 3-letter code")
+    return currency
+
+
+def _validated_iso_date(value: str | None, field: str) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    try:
+        parsed = dt.date.fromisoformat(value)
+    except ValueError as error:
+        raise ValueError(f"{field} must be an ISO date (YYYY-MM-DD)") from error
+    if parsed.isoformat() != value:
+        raise ValueError(f"{field} must be an ISO date (YYYY-MM-DD)")
+    return value
+
+
+class OrderedWineCreate(BaseModel):
+    wine_id: int
+    quantity: int = Field(ge=1, strict=True)
+    price_per_bottle: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    currency: str | None = None
+    vendor: str = ""
+    order_reference: str = ""
+    ordered_on: str = ""
+    tracking_url: str = ""
+    expected_on: str = ""
+    source_message_id: str = ""
+    notes: str = ""
+
+    @field_validator("currency")
+    @classmethod
+    def currency_must_be_valid(cls, value: str | None) -> str | None:
+        return _validated_currency(value)
+
+    @field_validator("ordered_on", "expected_on")
+    @classmethod
+    def dates_must_be_iso(cls, value: str, info: ValidationInfo) -> str:
+        return _validated_iso_date(value, info.field_name or "date") or ""
+
+
+class OrderedWineUpdate(BaseModel):
+    quantity: int | None = Field(default=None, ge=1, strict=True)
+    price_per_bottle: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    currency: str | None = None
+    vendor: str | None = None
+    order_reference: str | None = None
+    ordered_on: str | None = None
+    tracking_url: str | None = None
+    expected_on: str | None = None
+    source_message_id: str | None = None
+    notes: str | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def currency_must_be_valid(cls, value: str | None) -> str | None:
+        return _validated_currency(value)
+
+    @field_validator("ordered_on", "expected_on")
+    @classmethod
+    def dates_must_be_iso(
+        cls, value: str | None, info: ValidationInfo
+    ) -> str | None:
+        return _validated_iso_date(value, info.field_name or "date")
+
+
+class OrderedWineArrival(BaseModel):
+    arrived_on: str = ""
+
+    @field_validator("arrived_on")
+    @classmethod
+    def date_must_be_iso(cls, value: str) -> str:
+        if not value.strip():
+            return ""
+        return _validated_iso_date(value, "arrived_on") or ""
 
 
 # ---------------------------------------------------------------------------
@@ -414,6 +518,51 @@ def api_wishlist_remove(
 ) -> dict[str, bool]:
     _wrap(core.wishlist_remove, conn, wishlist_id)
     return {"ok": True}
+
+
+@app.get("/api/ordered-wines")
+def api_ordered_wines(
+    include_arrived: bool = False,
+    conn: sqlite3.Connection = Depends(get_conn),  # noqa: B008
+) -> list[dict[str, Any]]:
+    return core.list_ordered_wines(conn, include_arrived=include_arrived)
+
+
+@app.post("/api/ordered-wines", status_code=201)
+def api_ordered_wine_add(
+    order: OrderedWineCreate,
+    conn: sqlite3.Connection = Depends(get_conn),  # noqa: B008
+) -> dict[str, Any]:
+    fields = order.model_dump()
+    wine_id = fields.pop("wine_id")
+    quantity = fields.pop("quantity")
+    return _wrap(core.add_ordered_wine, conn, wine_id, quantity, **fields)
+
+
+@app.patch("/api/ordered-wines/{order_id}")
+def api_ordered_wine_update(
+    order_id: int,
+    update: OrderedWineUpdate,
+    conn: sqlite3.Connection = Depends(get_conn),  # noqa: B008
+) -> dict[str, Any]:
+    fields = update.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(status_code=400, detail="no fields to update")
+    return _wrap(core.update_ordered_wine, conn, order_id, **fields)
+
+
+@app.post("/api/ordered-wines/{order_id}/arrive")
+def api_ordered_wine_arrive(
+    order_id: int,
+    arrival: OrderedWineArrival,
+    conn: sqlite3.Connection = Depends(get_conn),  # noqa: B008
+) -> dict[str, Any]:
+    return _wrap(
+        core.mark_ordered_wine_arrived,
+        conn,
+        order_id,
+        arrived_on=arrival.arrived_on.strip() or None,
+    )
 
 
 @app.get("/photos/{filename}")

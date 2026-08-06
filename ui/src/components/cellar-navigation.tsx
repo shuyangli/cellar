@@ -7,6 +7,7 @@ const NAV_LINKS = [
   { to: '/', label: 'Cellar' },
   { to: '/drink-now/', label: 'Drink now' },
   { to: '/history/', label: 'History' },
+  { to: '/ordered/', label: 'Ordered' },
   { to: '/wishlist/', label: 'Wishlist' },
   { to: '/stats/', label: 'Stats' },
 ] as const

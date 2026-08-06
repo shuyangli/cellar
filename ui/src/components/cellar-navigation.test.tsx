@@ -34,6 +34,11 @@ function createTestRouter(initialPath = '/', basepath?: string) {
     path: '/history/',
     component: () => null,
   })
+  const orderedRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/ordered/',
+    component: () => null,
+  })
   const statsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/stats/',
@@ -41,7 +46,12 @@ function createTestRouter(initialPath = '/', basepath?: string) {
   })
 
   return createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, historyRoute, statsRoute]),
+    routeTree: rootRoute.addChildren([
+      indexRoute,
+      historyRoute,
+      orderedRoute,
+      statsRoute,
+    ]),
     history: createMemoryHistory({ initialEntries: [initialPath] }),
     basepath,
     trailingSlash: 'always',
@@ -118,6 +128,23 @@ describe('CellarNavigation', () => {
       screen
         .getByRole('link', { name: 'History' })
         .getAttribute('aria-current'),
+    ).toBeNull()
+  })
+
+  it('exposes ordered wines as its own active tab', async () => {
+    const router = createTestRouter('/ordered/')
+    await router.load()
+    render(<RouterProvider router={router} />)
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole('link', { name: 'Ordered' })
+          .getAttribute('aria-current'),
+      ).toBe('page'),
+    )
+    expect(
+      screen.getByRole('link', { name: 'Cellar' }).getAttribute('aria-current'),
     ).toBeNull()
   })
 })
