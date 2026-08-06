@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { OrderedWineRow } from './ordered-wine-row'
+import { OrderedWineCard, OrderedWineRow } from './ordered-wine-row'
 import type { OrderedWine } from '#/lib/cellar'
 
 const order: OrderedWine = {
@@ -93,5 +93,54 @@ describe('OrderedWineRow', () => {
     )
 
     expect(screen.getByText('52.50 NOT-A-CURRENCY each')).toBeTruthy()
+  })
+})
+
+describe('OrderedWineCard', () => {
+  it('presents the complete order as a narrow mobile card', () => {
+    render(<OrderedWineCard order={order} onArrive={() => undefined} />)
+
+    const card = screen.getByRole('article', {
+      name: 'Camille Jacquet Le Mesnil-sur-Oger Brut Grand Cru',
+    })
+    expect(card.className).toContain('md:hidden')
+    expect(screen.getByText('4 × 750 mL')).toBeTruthy()
+    expect(screen.getByText('Crush Wine & Spirits')).toBeTruthy()
+    expect(screen.getByText('#CW-123')).toBeTruthy()
+    expect(screen.getByText('Ordered Aug 1')).toBeTruthy()
+    expect(screen.getByText('Expected Aug 7')).toBeTruthy()
+    expect(screen.getByText('$52.50 each')).toBeTruthy()
+
+    const tracking = screen.getByRole('link', { name: 'Track shipment' })
+    expect(tracking.getAttribute('href')).toBe(order.tracking_url)
+    expect(tracking.getAttribute('target')).toBe('_blank')
+    expect(tracking.className).toContain('min-h-11')
+  })
+
+  it('uses the shared arrival action and exposes errors as status text', () => {
+    const onArrive = vi.fn()
+    const { rerender } = render(
+      <OrderedWineCard order={order} onArrive={onArrive} />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark arrived' }))
+    expect(onArrive).toHaveBeenCalledWith(order)
+
+    rerender(
+      <OrderedWineCard
+        order={order}
+        onArrive={onArrive}
+        pending
+        error="Inventory updated; reload the page."
+      />,
+    )
+
+    const button = screen.getByRole('button', { name: 'Arriving…' })
+    expect(button.hasAttribute('disabled')).toBe(true)
+    expect(button.className).toContain('min-h-11')
+    expect(screen.getByRole('status').textContent).toContain('reload the page')
+
+    fireEvent.click(button)
+    expect(onArrive).toHaveBeenCalledTimes(1)
   })
 })

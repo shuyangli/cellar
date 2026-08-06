@@ -1,7 +1,7 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useCallback, useRef, useState } from 'react'
 
-import { OrderedWineRow } from '#/components/ordered-wine-row'
+import { OrderedWineCard, OrderedWineRow } from '#/components/ordered-wine-row'
 import { Card, CardContent, CardHeader, CardTitle } from '#/components/ui/card'
 import {
   Table,
@@ -94,29 +94,42 @@ function OrderedWinesPage() {
             be added here.
           </CardContent>
         ) : (
-          <CardContent className="px-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="px-4">Wine</TableHead>
-                  <TableHead>Bottles</TableHead>
-                  <TableHead>Order</TableHead>
-                  <TableHead>Delivery</TableHead>
-                  <TableHead className="px-4 text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {orders.map((order) => (
-                  <OrderedWineRow
-                    key={order.id}
-                    order={order}
-                    pending={pendingIds.has(order.id)}
-                    error={errors.get(order.id)}
-                    onArrive={arrive}
-                  />
-                ))}
-              </TableBody>
-            </Table>
+          <CardContent className="overflow-hidden px-0">
+            <div className="md:hidden">
+              {orders.map((order) => (
+                <OrderedWineCard
+                  key={order.id}
+                  order={order}
+                  pending={pendingIds.has(order.id)}
+                  error={errors.get(order.id)}
+                  onArrive={arrive}
+                />
+              ))}
+            </div>
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="px-4">Wine</TableHead>
+                    <TableHead>Bottles</TableHead>
+                    <TableHead>Order</TableHead>
+                    <TableHead>Delivery</TableHead>
+                    <TableHead className="px-4 text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {orders.map((order) => (
+                    <OrderedWineRow
+                      key={order.id}
+                      order={order}
+                      pending={pendingIds.has(order.id)}
+                      error={errors.get(order.id)}
+                      onArrive={arrive}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         )}
       </Card>
