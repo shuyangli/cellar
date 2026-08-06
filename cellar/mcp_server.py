@@ -9,15 +9,20 @@ scale — normalize other scales before logging), prices per bottle with an ISO
 currency code (default USD).
 """
 
-from __future__ import annotations
-
 import functools
 import inspect
-from typing import Any
+from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import Field
 
 from . import core, db
+
+StrictPositiveInt = Annotated[int, Field(strict=True, ge=1)]
+StrictNonnegativeFloat = Annotated[
+    float, Field(strict=True, ge=0, allow_inf_nan=False)
+]
+StrictBoolean = Annotated[bool, Field(strict=True)]
 
 mcp = FastMCP(
     "cellar",
@@ -340,9 +345,9 @@ def wishlist_remove(conn, wishlist_id: int) -> dict[str, bool]:
 @_with_db
 def ordered_wine_add(
     conn,
-    wine_id: int,
-    quantity: int,
-    price_per_bottle: float | None = None,
+    wine_id: StrictPositiveInt,
+    quantity: StrictPositiveInt,
+    price_per_bottle: StrictNonnegativeFloat | None = None,
     currency: str = "",
     vendor: str = "",
     order_reference: str = "",
@@ -375,7 +380,9 @@ def ordered_wine_add(
 
 @mcp.tool()
 @_with_db
-def ordered_wine_list(conn, include_arrived: bool = False) -> list[dict[str, Any]]:
+def ordered_wine_list(
+    conn, include_arrived: StrictBoolean = False
+) -> list[dict[str, Any]]:
     """List outstanding ordered wine lines with shipment details. By default,
     arrived rows are omitted; include_arrived=true returns the history too. Use
     this to match a later tracking email by merchant/order reference before update."""
@@ -386,7 +393,7 @@ def ordered_wine_list(conn, include_arrived: bool = False) -> list[dict[str, Any
 @_with_db
 def ordered_wine_update(
     conn,
-    order_id: int,
+    order_id: StrictPositiveInt,
     tracking_url: str = "",
     expected_on: str = "",
     vendor: str = "",
@@ -416,7 +423,7 @@ def ordered_wine_update(
 @mcp.tool()
 @_with_db
 def ordered_wine_arrived(
-    conn, order_id: int, arrived_on: str = ""
+    conn, order_id: StrictPositiveInt, arrived_on: str = ""
 ) -> dict[str, Any]:
     """Mark one ordered wine line received. Atomically creates the purchase,
     increments physical inventory by the ordered quantity, and hides the line from

@@ -673,6 +673,8 @@ def _clean_ordered_wine_fields(fields: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("quantity must be at least 1")
     price = cleaned.get("price_per_bottle")
     if price is not None:
+        if isinstance(price, bool) or not isinstance(price, (int, float)):
+            raise ValueError("price_per_bottle must be a number")
         if not math.isfinite(price):
             raise ValueError("price_per_bottle must be finite")
         if price < 0:
@@ -741,9 +743,10 @@ def list_ordered_wines(
 def _find_existing_ordered_wine(
     conn: sqlite3.Connection, wine_id: int, fields: dict[str, Any]
 ) -> sqlite3.Row | None:
-    existing = None
+    reference_match = None
+    source_match = None
     if fields.get("vendor") and fields.get("order_reference"):
-        existing = conn.execute(
+        reference_match = conn.execute(
             """
             SELECT id, status FROM ordered_wines
             WHERE vendor = ? COLLATE NOCASE AND order_reference = ? COLLATE NOCASE
@@ -751,15 +754,21 @@ def _find_existing_ordered_wine(
             """,
             (fields["vendor"], fields["order_reference"], wine_id),
         ).fetchone()
-    if existing is None and fields.get("source_message_id"):
-        existing = conn.execute(
+    if fields.get("source_message_id"):
+        source_match = conn.execute(
             """
             SELECT id, status FROM ordered_wines
             WHERE source_message_id = ? AND wine_id = ?
             """,
             (fields["source_message_id"], wine_id),
         ).fetchone()
-    return existing
+    if (
+        reference_match is not None
+        and source_match is not None
+        and reference_match["id"] != source_match["id"]
+    ):
+        raise ValueError("conflicting ordered-wine identities")
+    return reference_match or source_match
 
 
 def add_ordered_wine(
@@ -776,6 +785,11 @@ def add_ordered_wine(
     source_message_id: str | None = None,
     notes: str | None = None,
 ) -> dict[str, Any]:
+    if isinstance(wine_id, bool) or not isinstance(wine_id, int):
+        # Core/MCP callers get the same domain error shape as other validation.
+        raise ValueError("wine_id must be an integer")  # noqa: TRY004
+    if wine_id < 1:
+        raise ValueError("wine_id must be at least 1")
     if conn.execute("SELECT 1 FROM wines WHERE id = ?", (wine_id,)).fetchone() is None:
         raise ValueError(f"no wine with id {wine_id}")
     submitted: dict[str, Any] = {
@@ -877,11 +891,6 @@ def update_ordered_wine(
 def mark_ordered_wine_arrived(
     conn: sqlite3.Connection, order_id: int, arrived_on: str | None = None
 ) -> dict[str, Any]:
-    order = get_ordered_wine(conn, order_id)
-    if order["status"] == "arrived":
-        return order
-    if order["status"] != "ordered":
-        raise ValueError(f"ordered wine has already {order['status']}")
     arrived_on = (
         arrived_on or dt.datetime.now().astimezone().date().isoformat()
     ).strip()
@@ -891,7 +900,17 @@ def mark_ordered_wine_arrived(
         raise ValueError("arrived_on must be an ISO date (YYYY-MM-DD)") from error
     if parsed_arrival.isoformat() != arrived_on:
         raise ValueError("arrived_on must be an ISO date (YYYY-MM-DD)")
+
+    # Acquire SQLite's write lock before reading the order snapshot. This makes
+    # the metadata copied into the purchase indivisible from the status change.
+    conn.execute("BEGIN IMMEDIATE")
     try:
+        order = get_ordered_wine(conn, order_id)
+        if order["status"] == "arrived":
+            conn.commit()
+            return order
+        if order["status"] != "ordered":
+            raise ValueError(f"ordered wine has already {order['status']}")
         purchase_id = _record_purchase(
             conn,
             order["wine_id"],
@@ -913,9 +932,6 @@ def mark_ordered_wine_arrived(
             (arrived_on, purchase_id, order_id),
         )
         if cursor.rowcount != 1:
-            # Another request received the same order while this connection was
-            # waiting for SQLite's write lock. Undo this request's purchase,
-            # event, and quantity update before returning the winner's row.
             conn.rollback()
             return get_ordered_wine(conn, order_id)
         conn.commit()
