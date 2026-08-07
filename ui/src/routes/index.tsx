@@ -181,7 +181,12 @@ function FilterBar({ search }: { search: CellarSearch }) {
           placeholder="Search producer, wine, region, grape…"
           className="h-9 w-full min-w-0 flex-1 rounded-lg border bg-card/90 px-3 text-sm shadow-inner shadow-black/[0.015] outline-none placeholder:text-muted-foreground/75 focus-visible:ring-2 focus-visible:ring-ring sm:max-w-xs"
         />
-        <Button type="submit" variant="outline" size="sm">
+        <Button
+          type="submit"
+          variant="outline"
+          size="sm"
+          className="min-h-11 px-3 text-sm sm:min-h-0 sm:px-2 sm:text-xs/relaxed"
+        >
           Search
         </Button>
       </form>
@@ -211,7 +216,7 @@ function FilterBar({ search }: { search: CellarSearch }) {
   )
 }
 
-function TypeChip({
+export function TypeChip({
   label,
   active,
   onClick,
@@ -220,14 +225,18 @@ function TypeChip({
   active: boolean
   onClick: () => void
 }) {
+  const touchTarget =
+    'inline-flex min-h-11 items-center justify-center rounded-full px-3 text-sm sm:min-h-0 sm:px-2.5 sm:py-1 sm:text-xs'
+
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
       className={
         active
-          ? 'rounded-full bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground'
-          : 'rounded-full border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground'
+          ? `${touchTarget} bg-primary font-medium text-primary-foreground`
+          : `${touchTarget} border text-muted-foreground transition-colors hover:text-foreground`
       }
     >
       {label}
