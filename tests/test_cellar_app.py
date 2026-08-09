@@ -558,6 +558,33 @@ def test_update_tasting_edits_review_without_changing_inventory(conn):
     assert updated["avg_rating"] == 93
 
 
+def test_mcp_update_tasting_edits_review_without_changing_inventory(conn):
+    wine = add_sample_wine(conn)
+    core.log_purchase(conn, wine["id"], 2)
+    wine = core.log_tasting(
+        conn,
+        wine["id"],
+        rating=88,
+        tasting_notes="closed at first",
+        consume_bottle=True,
+    )
+    tasting_id = wine["tastings"][0]["id"]
+    quantity_before = wine["quantity"]
+    events_before = wine["events"]
+
+    updated = mcp_server.update_tasting(
+        tasting_id,
+        {"tasting_notes": "opened into chalk and citrus"},
+    )
+
+    [review] = updated["tastings"]
+    assert review["tasting_notes"] == "opened into chalk and citrus"
+    assert updated["quantity"] == quantity_before
+    assert updated["events"] == events_before
+    tools = asyncio.run(mcp_server.mcp.list_tools())
+    assert "update_tasting" in {tool.name for tool in tools}
+
+
 def test_update_tasting_can_clear_optional_review_fields(conn):
     wine = add_sample_wine(conn)
     wine = core.log_tasting(

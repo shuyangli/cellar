@@ -215,6 +215,19 @@ def set_tasting_user(conn, tasting_id: int, user: str) -> dict[str, Any]:
 
 @mcp.tool()
 @_with_db
+def update_tasting(
+    conn, tasting_id: int, fields: dict[str, Any]
+) -> dict[str, Any]:
+    """Edit an existing tasting without changing its linked inventory event.
+    Tasting ids are visible in get_wine output. Pass only fields to change:
+    user, rating, tasting_notes, food_pairing, context_type, venue, price_paid,
+    liked, buy_again, tasted_on. Use null to clear optional fields such as rating,
+    tasting_notes, food_pairing, venue, or price_paid."""
+    return core.update_tasting(conn, tasting_id, **fields)
+
+
+@mcp.tool()
+@_with_db
 def adjust_inventory(conn, wine_id: int, delta: int, reason: str, event_type: str = "adjust") -> dict[str, Any]:
     """Manually change bottle count (negative delta removes bottles). Use for
     corrections, breakage, or gifts given (event_type 'gift'). Purchases and
