@@ -207,13 +207,17 @@ function FilterBar({ search }: { search: CellarSearch }) {
           />
         ))}
         <TypeChip
-          label={search.all ? 'showing all' : 'in stock'}
+          label={outOfStockToggleLabel(Boolean(search.all))}
           active={Boolean(search.all)}
           onClick={() => apply({ all: search.all ? undefined : true })}
         />
       </div>
     </div>
   )
+}
+
+export function outOfStockToggleLabel(showingAll: boolean): string {
+  return showingAll ? 'Hide out-of-stock wines' : 'Show out-of-stock wines'
 }
 
 export function TypeChip({
