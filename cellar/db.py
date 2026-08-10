@@ -12,6 +12,8 @@ Schema versions (``PRAGMA user_version``):
 * ``3`` — ``wishlist`` gains ``recommended_by``.
 * ``4`` — ``ordered_wines`` tracks bottles paid for but not yet received, with
   shipment metadata and an idempotent handoff into purchases/inventory.
+* ``5`` — ``tastings`` gains ``inventory_event_id`` so one inventory change can
+  carry reviews from multiple people without applying the stock change again.
 
 Forward compatibility
 ---------------------
@@ -38,6 +40,7 @@ from typing import NamedTuple
 from . import config
 
 DEFAULT_USER_NAME = "Shuyang"
+_LEGACY_TIMESTAMP_FALLBACK = "1970-01-01 00:00:00"
 
 # Columns the old app added via its ensure_wine_columns() upgrade path. Kept so a
 # database written by any old version lands in a consistent v1 state.
@@ -210,6 +213,7 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
     for row in rows:
         if row["quantity"] <= 0:
             continue
+        created_at = row["created_at"] or _LEGACY_TIMESTAMP_FALLBACK
         cursor = conn.execute(
             """
             INSERT INTO purchases (wine_id, quantity, price_per_bottle, vendor,
@@ -221,8 +225,8 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
                 row["quantity"],
                 row["acquired_price"],
                 row["acquired_from"],
-                row["created_at"],
-                row["created_at"],
+                created_at,
+                created_at,
             ),
         )
         conn.execute(
@@ -231,7 +235,7 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
                                           purchase_id, occurred_at)
             VALUES (?, ?, 'migration', 'baseline stock at v2 migration', ?, ?)
             """,
-            (row["id"], row["quantity"], cursor.lastrowid, row["created_at"]),
+            (row["id"], row["quantity"], cursor.lastrowid, created_at),
         )
 
 
@@ -290,6 +294,17 @@ def _migrate_v4(conn: sqlite3.Connection) -> None:
     _execute_schema(conn, _V4_SCHEMA)
 
 
+_V5_SCHEMA = """
+ALTER TABLE tastings ADD COLUMN inventory_event_id INTEGER REFERENCES inventory_events(id);
+CREATE INDEX idx_tastings_inventory_event_id ON tastings(inventory_event_id);
+"""
+
+
+def _migrate_v5(conn: sqlite3.Connection) -> None:
+    """Let reviews attach to an existing ledger event without changing stock."""
+    _execute_schema(conn, _V5_SCHEMA)
+
+
 class Migration(NamedTuple):
     """One schema step, plus how far back the result stays readable.
 
@@ -313,6 +328,8 @@ _MIGRATIONS: list[Migration] = [
     Migration(_migrate_v3, min_compatible=1),
     # Older code cannot safely delete wines/purchases referenced by this table.
     Migration(_migrate_v4, min_compatible=4),
+    # Older code does not clear review links before deleting inventory events.
+    Migration(_migrate_v5, min_compatible=5),
 ]
 SCHEMA_VERSION = len(_MIGRATIONS)
 

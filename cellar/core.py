@@ -45,6 +45,8 @@ WINE_FIELDS = {
 
 WINE_TYPES = {"red", "white", "rose", "sparkling", "dessert", "fortified", "orange", "other"}
 
+_HISTORY_FALLBACK_TIMESTAMP = "1970-01-01 00:00:00"
+
 TASTING_UPDATE_FIELDS = {
     "user",
     "rating",
@@ -436,6 +438,57 @@ def log_purchase(
     return get_wine(conn, wine_id)
 
 
+def _insert_tasting(
+    conn: sqlite3.Connection,
+    wine_id: int,
+    user: str | int | None = None,
+    rating: int | None = None,
+    tasting_notes: str | None = None,
+    food_pairing: str | None = None,
+    context_type: str = "home",
+    venue: str | None = None,
+    price_paid: float | None = None,
+    liked: bool | None = None,
+    buy_again: bool | None = None,
+    tasted_on: str | None = None,
+    inventory_event_id: int | None = None,
+) -> int:
+    """Insert one tasting without applying or committing an inventory change."""
+    if rating is not None and not 0 <= rating <= 100:
+        raise ValueError("rating must be 0-100")
+    if conn.execute("SELECT 1 FROM wines WHERE id = ?", (wine_id,)).fetchone() is None:
+        raise ValueError(f"no wine with id {wine_id}")
+    user_id = resolve_user(conn, user)
+    tasted_on = tasted_on or dt.datetime.now().astimezone().date().isoformat()
+    if liked is None:
+        liked = rating is not None and rating >= 85
+    cursor = conn.execute(
+        """
+        INSERT INTO tastings
+            (wine_id, user_id, context_type, venue, price_paid, rating, liked,
+             buy_again, tasting_notes, food_pairing, tasted_on, inventory_event_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            wine_id,
+            user_id,
+            context_type,
+            venue,
+            price_paid,
+            rating,
+            int(bool(liked)),
+            int(bool(buy_again)),
+            tasting_notes,
+            food_pairing,
+            tasted_on,
+            inventory_event_id,
+        ),
+    )
+    tasting_id = cursor.lastrowid
+    assert tasting_id is not None
+    return tasting_id
+
+
 def log_tasting(
     conn: sqlite3.Connection,
     wine_id: int,
@@ -453,36 +506,21 @@ def log_tasting(
 ) -> dict[str, Any]:
     """Record drinking + reviewing a wine. Decrements inventory unless the wine was
     tasted elsewhere (restaurant, tasting room) — set ``consume_bottle=False`` then."""
-    if rating is not None and not 0 <= rating <= 100:
-        raise ValueError("rating must be 0-100")
-    if conn.execute("SELECT 1 FROM wines WHERE id = ?", (wine_id,)).fetchone() is None:
-        raise ValueError(f"no wine with id {wine_id}")
-    user_id = resolve_user(conn, user)
-    tasted_on = tasted_on or dt.date.today().isoformat()
-    if liked is None:
-        liked = rating is not None and rating >= 85
-    cursor = conn.execute(
-        """
-        INSERT INTO tastings
-            (wine_id, user_id, context_type, venue, price_paid, rating, liked,
-             buy_again, tasting_notes, food_pairing, tasted_on)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            wine_id,
-            user_id,
-            context_type,
-            venue,
-            price_paid,
-            rating,
-            int(bool(liked)),
-            int(bool(buy_again)),
-            tasting_notes,
-            food_pairing,
-            tasted_on,
-        ),
+    tasted_on = tasted_on or dt.datetime.now().astimezone().date().isoformat()
+    tasting_id = _insert_tasting(
+        conn,
+        wine_id,
+        user=user,
+        rating=rating,
+        tasting_notes=tasting_notes,
+        food_pairing=food_pairing,
+        context_type=context_type,
+        venue=venue,
+        price_paid=price_paid,
+        liked=liked,
+        buy_again=buy_again,
+        tasted_on=tasted_on,
     )
-    tasting_id = cursor.lastrowid
     if consume_bottle:
         _apply_event(
             conn,
@@ -494,6 +532,49 @@ def log_tasting(
         )
     conn.commit()
     return get_wine(conn, wine_id)
+
+
+def review_inventory_event(
+    conn: sqlite3.Connection,
+    event_id: int,
+    user: str | int | None = None,
+    rating: int | None = None,
+    tasting_notes: str | None = None,
+    food_pairing: str | None = None,
+    context_type: str = "home",
+    venue: str | None = None,
+    price_paid: float | None = None,
+    liked: bool | None = None,
+    buy_again: bool | None = None,
+    tasted_on: str | None = None,
+) -> dict[str, Any]:
+    """Attach a review to an existing stock event without changing inventory."""
+    event = conn.execute(
+        "SELECT wine_id, occurred_at FROM inventory_events WHERE id = ?", (event_id,)
+    ).fetchone()
+    if event is None:
+        raise ValueError(f"no inventory event with id {event_id}")
+    event_tasted_on = tasted_on or str(
+        event["occurred_at"] or _HISTORY_FALLBACK_TIMESTAMP
+    )[:10]
+    _insert_tasting(
+        conn,
+        event["wine_id"],
+        user=user,
+        rating=rating,
+        tasting_notes=tasting_notes,
+        food_pairing=food_pairing,
+        context_type=context_type,
+        venue=venue,
+        price_paid=price_paid,
+        liked=liked,
+        buy_again=buy_again,
+        tasted_on=event_tasted_on,
+        inventory_event_id=event_id,
+    )
+    _touch_wine(conn, event["wine_id"])
+    conn.commit()
+    return get_wine(conn, event["wine_id"])
 
 
 def update_tasting(
@@ -571,6 +652,17 @@ def delete_tasting(conn: sqlite3.Connection, tasting_id: int) -> dict[str, Any]:
         "SELECT COALESCE(SUM(delta), 0) FROM inventory_events WHERE tasting_id = ?",
         (tasting_id,),
     ).fetchone()[0]
+    # Reviews added later can point at the event created by this tasting. They
+    # remain valid standalone reviews if the original stock event is removed.
+    conn.execute(
+        """
+        UPDATE tastings SET inventory_event_id = NULL
+        WHERE inventory_event_id IN (
+            SELECT id FROM inventory_events WHERE tasting_id = ?
+        )
+        """,
+        (tasting_id,),
+    )
     conn.execute("DELETE FROM inventory_events WHERE tasting_id = ?", (tasting_id,))
     conn.execute("DELETE FROM photos WHERE tasting_id = ?", (tasting_id,))
     conn.execute("DELETE FROM tastings WHERE id = ?", (tasting_id,))
@@ -604,6 +696,16 @@ def delete_purchase(conn: sqlite3.Connection, purchase_id: int) -> dict[str, Any
             "cannot delete purchase: its bottles are already consumed"
             " — delete the tastings first or adjust inventory instead"
         )
+    # Keep reviews, but detach them from the purchase event that is going away.
+    conn.execute(
+        """
+        UPDATE tastings SET inventory_event_id = NULL
+        WHERE inventory_event_id IN (
+            SELECT id FROM inventory_events WHERE purchase_id = ?
+        )
+        """,
+        (purchase_id,),
+    )
     conn.execute("DELETE FROM inventory_events WHERE purchase_id = ?", (purchase_id,))
     conn.execute("UPDATE tastings SET purchase_id = NULL WHERE purchase_id = ?", (purchase_id,))
     conn.execute("UPDATE photos SET purchase_id = NULL WHERE purchase_id = ?", (purchase_id,))
@@ -635,6 +737,11 @@ def delete_wine(conn: sqlite3.Connection, wine_id: int) -> None:
         row["path"]
         for row in conn.execute("SELECT path FROM photos WHERE wine_id = ?", (wine_id,))
     ]
+    # Break the reverse review -> event links before deleting the event ledger;
+    # both sides are deleted below, but SQLite enforces each intermediate step.
+    conn.execute(
+        "UPDATE tastings SET inventory_event_id = NULL WHERE wine_id = ?", (wine_id,)
+    )
     for table in (
         "inventory_events",
         "photos",
@@ -1186,6 +1293,147 @@ def tasting_history(conn: sqlite3.Connection, limit: int = 200) -> list[dict[str
     for row in rows:
         row["user_initials"] = initials.get(row["user_id"], "?")
     return rows
+
+
+def full_history(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Every inventory change and review, newest first.
+
+    Reviews created while consuming a bottle are linked by
+    ``inventory_events.tasting_id``. Additional reviews attached later use
+    ``tastings.inventory_event_id``. Both render inside the same inventory entry;
+    tastings with no stock event remain standalone review entries.
+    """
+    initials = user_initials(conn)
+    tastings = _rows(
+        conn.execute(
+            """
+            SELECT t.*, u.name AS user_name
+            FROM tastings t LEFT JOIN users u ON u.id = t.user_id
+            ORDER BY t.id
+            """
+        ).fetchall()
+    )
+    tasting_by_id: dict[int, dict[str, Any]] = {}
+    attached_by_event: dict[int, list[dict[str, Any]]] = {}
+    for tasting in tastings:
+        tasting["user_initials"] = initials.get(tasting["user_id"], "?")
+        tasting_by_id[tasting["id"]] = tasting
+        if tasting["inventory_event_id"] is not None:
+            attached_by_event.setdefault(tasting["inventory_event_id"], []).append(tasting)
+
+    wine_rows = _rows(
+        conn.execute(
+            """
+            SELECT id, producer, wine_name, vintage, wine_type, region, country
+            FROM wines
+            """
+        ).fetchall()
+    )
+    wine_by_id = {wine["id"]: wine for wine in wine_rows}
+
+    events = _rows(
+        conn.execute(
+            """
+            SELECT e.*, w.producer, w.wine_name, w.vintage, w.wine_type,
+                   w.region, w.country,
+                   p.quantity AS purchase_quantity,
+                   p.price_per_bottle AS purchase_price_per_bottle,
+                   p.currency AS purchase_currency,
+                   p.vendor AS purchase_vendor,
+                   p.purchase_date
+            FROM inventory_events e
+            JOIN wines w ON w.id = e.wine_id
+            LEFT JOIN purchases p ON p.id = e.purchase_id
+            ORDER BY e.occurred_at DESC, e.id DESC
+            """
+        ).fetchall()
+    )
+    entries: list[dict[str, Any]] = []
+    primary_tasting_ids: set[int] = set()
+    for event in events:
+        reviews: list[dict[str, Any]] = []
+        if event["tasting_id"] is not None:
+            primary_tasting_ids.add(event["tasting_id"])
+            primary = tasting_by_id.get(event["tasting_id"])
+            if primary is not None:
+                reviews.append(primary)
+        reviews.extend(
+            review
+            for review in attached_by_event.get(event["id"], [])
+            if review["id"] != event["tasting_id"]
+        )
+        event_sort_at = (
+            f"{event['purchase_date']} 12:00:00"
+            if event["purchase_date"]
+            else event["occurred_at"] or _HISTORY_FALLBACK_TIMESTAMP
+        )
+        event_payload = {
+            key: event[key]
+            for key in (
+                "id",
+                "wine_id",
+                "delta",
+                "event_type",
+                "reason",
+                "purchase_id",
+                "tasting_id",
+                "occurred_at",
+                "purchase_quantity",
+                "purchase_price_per_bottle",
+                "purchase_currency",
+                "purchase_vendor",
+                "purchase_date",
+            )
+        }
+        event_payload["occurred_at"] = (
+            event["occurred_at"] or _HISTORY_FALLBACK_TIMESTAMP
+        )
+        entries.append(
+            {
+                "key": f"inventory:{event['id']}",
+                "kind": "inventory_change",
+                "sort_at": event_sort_at,
+                "wine_id": event["wine_id"],
+                "producer": event["producer"],
+                "wine_name": event["wine_name"],
+                "vintage": event["vintage"],
+                "wine_type": event["wine_type"],
+                "region": event["region"],
+                "country": event["country"],
+                "event": event_payload,
+                "reviews": reviews,
+            }
+        )
+
+    attached_tasting_ids = {
+        tasting["id"] for reviews in attached_by_event.values() for tasting in reviews
+    }
+    for tasting in tastings:
+        if tasting["id"] in primary_tasting_ids or tasting["id"] in attached_tasting_ids:
+            continue
+        wine = wine_by_id.get(tasting["wine_id"])
+        if wine is None:
+            continue
+        wine_fields = {key: value for key, value in wine.items() if key != "id"}
+        sort_at = (
+            f"{tasting['tasted_on']} 12:00:00"
+            if tasting["tasted_on"]
+            else tasting["created_at"] or _HISTORY_FALLBACK_TIMESTAMP
+        )
+        entries.append(
+            {
+                "key": f"review:{tasting['id']}",
+                "kind": "review",
+                "sort_at": sort_at,
+                "wine_id": tasting["wine_id"],
+                **wine_fields,
+                "event": None,
+                "reviews": [tasting],
+            }
+        )
+
+    entries.sort(key=lambda entry: (entry["sort_at"], entry["key"]), reverse=True)
+    return entries
 
 
 def read_query(conn: sqlite3.Connection, sql: str, limit: int = 200) -> list[dict[str, Any]]:

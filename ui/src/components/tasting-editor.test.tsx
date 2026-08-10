@@ -43,6 +43,7 @@ const tasting: Tasting = {
   food_pairing: null,
   tasted_on: '2026-07-31',
   created_at: '2026-07-31 12:00:00',
+  inventory_event_id: null,
 }
 
 afterEach(cleanup)
