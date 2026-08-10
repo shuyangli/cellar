@@ -109,7 +109,8 @@ Original endpoints (kept): `GET /api/cellar`, `POST /api/cellar/items`,
 `POST /api/cellar/items/{id}/adjust`, `GET /health`.
 
 Added: `GET /api/wines/{id}` (full dossier), `POST /api/wines/{id}/purchases`,
-`POST /api/wines/{id}/tastings`, `PATCH /api/tastings/{id}`, `GET /api/stats`, `GET /api/drink-now`,
+`POST /api/wines/{id}/tastings`, `PATCH /api/tastings/{id}`, `GET /api/history`,
+`POST /api/inventory-events/{id}/reviews`, `GET /api/stats`, `GET /api/drink-now`,
 `GET /api/tastings`, `GET /api/wishlist`, `POST /api/wishlist`,
 `DELETE /api/wishlist/{id}`, `GET/POST /api/ordered-wines`,
 `PATCH /api/ordered-wines/{id}`, `POST /api/ordered-wines/{id}/arrive`,

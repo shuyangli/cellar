@@ -138,18 +138,47 @@ class PurchaseCreate(BaseModel):
     notes: str = ""
 
 
-class TastingCreate(BaseModel):
+class ReviewCreate(BaseModel):
     user: str | int | None = None
-    rating: int | None = Field(default=None, ge=0, le=100)
+    rating: int | None = Field(default=None, ge=0, le=100, strict=True)
     tasting_notes: str = ""
     food_pairing: str = ""
     context_type: str = "home"
     venue: str = ""
-    price_paid: float | None = Field(default=None, ge=0)
+    price_paid: float | None = Field(default=None, ge=0, allow_inf_nan=False, strict=True)
     liked: bool | None = None
     buy_again: bool | None = None
     tasted_on: str = ""
+
+    @field_validator("context_type")
+    @classmethod
+    def context_type_must_not_be_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("context type is required")
+        return value
+
+    @field_validator("tasted_on")
+    @classmethod
+    def tasted_on_must_be_iso_or_empty(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            return ""
+        try:
+            parsed = dt.date.fromisoformat(value)
+        except ValueError as error:
+            raise ValueError("tasted_on must be an ISO date (YYYY-MM-DD)") from error
+        if parsed.isoformat() != value:
+            raise ValueError("tasted_on must be an ISO date (YYYY-MM-DD)")
+        return value
+
+
+class TastingCreate(ReviewCreate):
     consume_bottle: bool = True
+
+
+class InventoryEventReviewCreate(ReviewCreate):
+    pass
 
 
 class TastingUpdate(BaseModel):
@@ -470,6 +499,30 @@ def api_log_tasting(
     )
 
 
+@app.post("/api/inventory-events/{event_id}/reviews", status_code=201)
+def api_review_inventory_event(
+    event_id: int,
+    review: InventoryEventReviewCreate,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict[str, Any]:
+    """Add a review to an existing stock change without changing bottle count."""
+    return _wrap(
+        core.review_inventory_event,
+        conn,
+        event_id,
+        user=review.user,
+        rating=review.rating,
+        tasting_notes=review.tasting_notes.strip() or None,
+        food_pairing=review.food_pairing.strip() or None,
+        context_type=review.context_type,
+        venue=review.venue.strip() or None,
+        price_paid=review.price_paid,
+        liked=review.liked,
+        buy_again=review.buy_again,
+        tasted_on=review.tasted_on.strip() or None,
+    )
+
+
 @app.get("/api/users")
 def api_users(conn: sqlite3.Connection = Depends(get_conn)) -> list[dict[str, Any]]:
     """Reviewers plus the initials their ratings render with."""
@@ -492,6 +545,11 @@ def api_tastings(
     conn: sqlite3.Connection = Depends(get_conn),
 ) -> list[dict[str, Any]]:
     return core.tasting_history(conn, limit=limit)
+
+
+@app.get("/api/history")
+def api_history(conn: sqlite3.Connection = Depends(get_conn)) -> list[dict[str, Any]]:
+    return core.full_history(conn)
 
 
 @app.get("/api/wishlist")

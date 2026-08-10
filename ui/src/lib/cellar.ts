@@ -79,6 +79,7 @@ export type Tasting = {
   food_pairing: string | null
   tasted_on: string | null
   created_at: string
+  inventory_event_id: number | null
 }
 
 export type TastingWithWine = Tasting & {
@@ -144,6 +145,31 @@ export type InventoryEvent = {
   event_type: string
   reason: string | null
   occurred_at: string
+}
+
+export type HistoryInventoryEvent = InventoryEvent & {
+  purchase_quantity: number | null
+  purchase_price_per_bottle: number | null
+  purchase_currency: string | null
+  purchase_vendor: string | null
+  purchase_date: string | null
+  purchase_id: number | null
+  tasting_id: number | null
+}
+
+export type HistoryEntry = {
+  key: string
+  kind: 'inventory_change' | 'review'
+  sort_at: string
+  wine_id: number
+  producer: string
+  wine_name: string
+  vintage: string | null
+  wine_type: string | null
+  region: string | null
+  country: string | null
+  event: HistoryInventoryEvent | null
+  reviews: Array<Tasting>
 }
 
 export type Photo = {
@@ -290,6 +316,10 @@ export function fetchUsers(): Promise<Array<User>> {
 
 export function fetchTastings(limit = 200): Promise<Array<TastingWithWine>> {
   return fetchJson<Array<TastingWithWine>>(`/api/tastings?limit=${limit}`)
+}
+
+export function fetchHistory(): Promise<Array<HistoryEntry>> {
+  return fetchJson<Array<HistoryEntry>>('/api/history')
 }
 
 export function fetchWishlist(): Promise<Array<WishlistEntry>> {
@@ -448,6 +478,18 @@ export function logTasting(
   draft: TastingDraft,
 ): Promise<WineDossier> {
   return mutate<WineDossier>(`/api/wines/${wineId}/tastings`, 'POST', draft)
+}
+
+export function reviewInventoryEvent(
+  eventId: number,
+  draft: TastingDraft,
+): Promise<WineDossier> {
+  const { consume_bottle: _consumeBottle, ...review } = draft
+  return mutate<WineDossier>(
+    `/api/inventory-events/${eventId}/reviews`,
+    'POST',
+    review,
+  )
 }
 
 export function updateTasting(

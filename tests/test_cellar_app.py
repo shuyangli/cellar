@@ -153,6 +153,35 @@ def test_migration_is_idempotent(data_dir: Path):
         conn.close()
 
 
+def test_full_history_handles_null_timestamps_in_migrated_legacy_database(
+    data_dir: Path,
+):
+    build_old_database(config.db_path())
+    legacy = sqlite3.connect(config.db_path())
+    legacy.execute("UPDATE wines SET created_at = NULL, updated_at = NULL WHERE id = 1")
+    legacy.execute("UPDATE tastings SET tasted_on = NULL, created_at = NULL WHERE id = 1")
+    legacy.commit()
+    legacy.close()
+
+    conn = db.open_db()
+    try:
+        modern = add_sample_wine(conn, producer="Modern", wine_name="Timestamp")
+        core.log_purchase(conn, modern["id"], 1)
+
+        history = core.full_history(conn)
+        assert len(history) == 3
+        assert all(entry["sort_at"] is not None for entry in history)
+        assert history == core.full_history(conn)
+        migrated = next(
+            entry
+            for entry in history
+            if entry["event"] and entry["event"]["event_type"] == "migration"
+        )
+        assert migrated["event"]["occurred_at"] == "1970-01-01 00:00:00"
+    finally:
+        conn.close()
+
+
 def test_records_the_compatibility_floor_on_migrate(data_dir: Path):
     conn = db.open_db()
     try:
@@ -276,6 +305,130 @@ def test_tasting_elsewhere_keeps_inventory(conn):
         consume_bottle=False,
     )
     assert wine["quantity"] == 1
+
+
+def test_full_history_combines_inventory_changes_and_reviews(conn):
+    wine = add_sample_wine(conn)
+    wine = core.log_purchase(
+        conn,
+        wine["id"],
+        2,
+        price_per_bottle=74.0,
+        vendor="Chambers Street",
+        purchase_date="2026-08-01",
+    )
+    wine = core.adjust_inventory(
+        conn,
+        wine["id"],
+        -1,
+        reason="drunk (marked in web UI)",
+        event_type="consume",
+    )
+    consume_event = next(
+        event for event in wine["events"] if event["event_type"] == "consume"
+    )
+    quantity_before = wine["quantity"]
+
+    core.review_inventory_event(
+        conn,
+        consume_event["id"],
+        user="Shuyang",
+        rating=92,
+        tasting_notes="chalk and citrus",
+    )
+    core.review_inventory_event(
+        conn,
+        consume_event["id"],
+        user="Alex",
+        rating=90,
+        tasting_notes="very mineral",
+    )
+    core.log_tasting(
+        conn,
+        wine["id"],
+        user="Alex",
+        rating=88,
+        context_type="restaurant",
+        consume_bottle=False,
+        tasted_on="2026-08-02",
+    )
+
+    assert core.get_wine(conn, wine["id"])["quantity"] == quantity_before
+    history = core.full_history(conn)
+    assert {entry["kind"] for entry in history} == {"inventory_change", "review"}
+    assert len(history) == 3  # purchase, consumed bottle, standalone restaurant review
+
+    consumed = next(
+        entry
+        for entry in history
+        if entry["event"] and entry["event"]["id"] == consume_event["id"]
+    )
+    assert consumed["event"]["delta"] == -1
+    assert consumed["event"]["wine_id"] == wine["id"]
+    assert {review["user_name"] for review in consumed["reviews"]} == {
+        "Shuyang",
+        "Alex",
+    }
+
+    purchase = next(
+        entry
+        for entry in history
+        if entry["event"] and entry["event"]["event_type"] == "purchase"
+    )
+    assert purchase["event"]["purchase_vendor"] == "Chambers Street"
+    assert purchase["event"]["purchase_price_per_bottle"] == 74.0
+
+
+def test_review_inventory_event_handles_null_legacy_timestamp(conn):
+    wine = add_sample_wine(conn)
+    wine = core.log_purchase(conn, wine["id"], 1)
+    event_id = wine["events"][0]["id"]
+    conn.execute(
+        "UPDATE inventory_events SET occurred_at = NULL WHERE id = ?", (event_id,)
+    )
+    conn.commit()
+
+    reviewed = core.review_inventory_event(conn, event_id, rating=90)
+
+    assert reviewed["quantity"] == 1
+    assert reviewed["tastings"][0]["tasted_on"] == "1970-01-01"
+    event_entry = next(
+        entry for entry in core.full_history(conn) if entry["key"] == f"inventory:{event_id}"
+    )
+    assert event_entry["event"]["occurred_at"] == "1970-01-01 00:00:00"
+
+
+def test_deleting_attached_review_keeps_inventory_event(conn):
+    wine = add_sample_wine(conn)
+    wine = core.log_purchase(conn, wine["id"], 2)
+    wine = core.adjust_inventory(conn, wine["id"], -1, "drunk", "consume")
+    event = wine["events"][-1]
+    reviewed = core.review_inventory_event(conn, event["id"], rating=91)
+    tasting_id = reviewed["tastings"][0]["id"]
+
+    after = core.delete_tasting(conn, tasting_id)
+
+    assert after["quantity"] == 1
+    assert [item["id"] for item in after["events"]] == [
+        item["id"] for item in wine["events"]
+    ]
+    assert after["tastings"] == []
+
+
+def test_deleting_primary_tasting_keeps_additional_review_standalone(conn):
+    wine = add_sample_wine(conn)
+    core.log_purchase(conn, wine["id"], 1)
+    wine = core.log_tasting(conn, wine["id"], user="Shuyang", rating=92)
+    event = next(item for item in wine["events"] if item["event_type"] == "consume")
+    primary_id = event["tasting_id"]
+    core.review_inventory_event(conn, event["id"], user="Alex", rating=90)
+
+    after = core.delete_tasting(conn, primary_id)
+
+    assert after["quantity"] == 1
+    assert len(after["tastings"]) == 1
+    assert after["tastings"][0]["user_name"] == "Alex"
+    assert after["tastings"][0]["inventory_event_id"] is None
 
 
 def test_second_user_reviews_same_wine(conn):
@@ -468,6 +621,119 @@ def test_tasting_and_stats_endpoints(client):
     assert client.get("/health").json()["ok"] is True
 
 
+def test_history_endpoint_and_inventory_event_review(client):
+    wine = client.post(
+        "/api/cellar/items",
+        json={"producer": "P", "wine_name": "W", "quantity": 2},
+    ).json()
+    adjusted = client.post(
+        f"/api/cellar/items/{wine['id']}/adjust",
+        json={"delta": -1, "reason": "drunk", "event_type": "consume"},
+    ).json()
+    event = adjusted["events"][-1]
+    quantity_before = adjusted["quantity"]
+
+    created = client.post(
+        f"/api/inventory-events/{event['id']}/reviews",
+        json={
+            "user": "Alex",
+            "rating": 93,
+            "tasting_notes": "silky and long",
+            "buy_again": True,
+        },
+    )
+
+    assert created.status_code == 201
+    assert created.json()["quantity"] == quantity_before
+    history = client.get("/api/history")
+    assert history.status_code == 200
+    event_entry = next(
+        item for item in history.json() if item["key"] == f"inventory:{event['id']}"
+    )
+    assert event_entry["event"]["delta"] == -1
+    assert event_entry["event"]["wine_id"] == wine["id"]
+    assert event_entry["reviews"][0]["user_name"] == "Alex"
+    assert event_entry["reviews"][0]["rating"] == 93
+
+    missing = client.post(
+        "/api/inventory-events/9999/reviews", json={"rating": 90}
+    )
+    assert missing.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"tasted_on": "not-a-date"},
+        {"tasted_on": "2026-02-30"},
+        {"context_type": "   "},
+        {"rating": True},
+        {"rating": "90"},
+        {"rating": 90.0},
+        {"price_paid": True},
+        {"price_paid": "12.5"},
+    ],
+)
+def test_review_create_endpoints_reject_invalid_values_without_side_effects(
+    client, payload
+):
+    wine = client.post(
+        "/api/cellar/items",
+        json={"producer": "Strict", "wine_name": "Review", "quantity": 2},
+    ).json()
+    event = wine["events"][0]
+
+    for endpoint in (
+        f"/api/wines/{wine['id']}/tastings",
+        f"/api/inventory-events/{event['id']}/reviews",
+    ):
+        response = client.post(endpoint, json=payload)
+        assert response.status_code == 422
+        dossier = client.get(f"/api/wines/{wine['id']}").json()
+        assert dossier["quantity"] == 2
+        assert dossier["tastings"] == []
+
+
+def test_review_create_endpoints_reject_non_finite_price_without_side_effects(client):
+    wine = client.post(
+        "/api/cellar/items",
+        json={"producer": "Finite", "wine_name": "Review", "quantity": 2},
+    ).json()
+    event = wine["events"][0]
+
+    for endpoint in (
+        f"/api/wines/{wine['id']}/tastings",
+        f"/api/inventory-events/{event['id']}/reviews",
+    ):
+        response = client.post(
+            endpoint,
+            content='{"price_paid":1e999}',
+            headers={"content-type": "application/json"},
+        )
+        assert response.status_code == 422
+        dossier = client.get(f"/api/wines/{wine['id']}").json()
+        assert dossier["quantity"] == 2
+        assert dossier["tastings"] == []
+
+
+def test_review_create_accepts_empty_tasted_on(client):
+    wine = client.post(
+        "/api/cellar/items",
+        json={"producer": "Default", "wine_name": "Review date", "quantity": 1},
+    ).json()
+
+    response = client.post(
+        f"/api/wines/{wine['id']}/tastings",
+        json={"rating": 90, "tasted_on": ""},
+    )
+
+    assert response.status_code == 201
+    assert (
+        response.json()["tastings"][0]["tasted_on"]
+        == core.dt.datetime.now().astimezone().date().isoformat()
+    )
+
+
 def test_delete_tasting_restores_bottle(conn):
     wine = add_sample_wine(conn)
     core.log_purchase(conn, wine["id"], 2)
@@ -627,14 +893,20 @@ def test_update_tasting_preserves_or_clears_unattributed_reviewer(conn):
     assert preserved["tastings"][0]["user_name"] is None
 
 
-def test_delete_purchase_removes_bottles(conn):
+def test_delete_purchase_removes_bottles_and_detaches_reviews(conn):
     wine = add_sample_wine(conn)
     wine = core.log_purchase(conn, wine["id"], 3)
     purchase_id = wine["purchases"][0]["id"]
+    purchase_event_id = wine["events"][0]["id"]
+    core.review_inventory_event(conn, purchase_event_id, rating=90)
+
     wine = core.delete_purchase(conn, purchase_id)
+
     assert wine["quantity"] == 0
     assert wine["purchases"] == []
     assert wine["events"] == []
+    assert len(wine["tastings"]) == 1
+    assert wine["tastings"][0]["inventory_event_id"] is None
 
 
 def test_delete_purchase_blocked_when_bottles_consumed(conn):
@@ -648,7 +920,11 @@ def test_delete_purchase_blocked_when_bottles_consumed(conn):
 def test_delete_wine_cascades_including_photos(conn, tmp_path: Path):
     wine = add_sample_wine(conn)
     core.log_purchase(conn, wine["id"], 2)
-    core.log_tasting(conn, wine["id"], rating=90)
+    wine = core.log_tasting(conn, wine["id"], rating=90)
+    consume_event = next(
+        event for event in wine["events"] if event["event_type"] == "consume"
+    )
+    core.review_inventory_event(conn, consume_event["id"], user="Alex", rating=88)
     source = tmp_path / "label.jpg"
     source.write_bytes(b"img")
     photo = core.attach_photo(conn, str(source), wine_id=wine["id"])
@@ -1595,18 +1871,18 @@ def test_ordered_wine_endpoint_rejects_invalid_metadata(client, payload):
     assert response.status_code == 422
 
 
-def test_v4_schema_refuses_older_code_that_cannot_manage_ordered_wines(
+def test_v5_schema_refuses_older_code_that_cannot_manage_event_review_links(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     path = tmp_path / "future.db"
     connection = db.open_db(path)
-    assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
     connection.close()
 
     legacy = db.connect(path)
-    monkeypatch.setattr(db, "_MIGRATIONS", db._MIGRATIONS[:3])
-    monkeypatch.setattr(db, "SCHEMA_VERSION", 3)
-    with pytest.raises(RuntimeError, match="requires code at schema version 4 or newer"):
+    monkeypatch.setattr(db, "_MIGRATIONS", db._MIGRATIONS[:4])
+    monkeypatch.setattr(db, "SCHEMA_VERSION", 4)
+    with pytest.raises(RuntimeError, match="requires code at schema version 5 or newer"):
         db.migrate(legacy)
     legacy.close()
 
@@ -1642,7 +1918,7 @@ def test_failed_v4_migration_rolls_back_and_can_be_retried(
         is None
     )
 
-    monkeypatch.setattr(db, "_MIGRATIONS", migrations)
+    monkeypatch.setattr(db, "_MIGRATIONS", migrations[:4])
     db.migrate(connection)
     assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
     connection.close()
@@ -1658,7 +1934,7 @@ def test_concurrent_migrations_recheck_version_after_acquiring_lock(
     setup = db.open_db(path)
     setup.close()
 
-    monkeypatch.setattr(db, "_MIGRATIONS", migrations)
+    monkeypatch.setattr(db, "_MIGRATIONS", migrations[:4])
     monkeypatch.setattr(db, "SCHEMA_VERSION", 4)
     original_version = db._current_version
     first_reads = threading.Barrier(2)

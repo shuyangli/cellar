@@ -1,22 +1,28 @@
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { useState } from 'react'
 
-import { Card, CardContent } from '#/components/ui/card'
-import { Badge } from '#/components/ui/badge'
-import { RatingBadge } from '#/components/rating-badge'
-import { Button } from '#/components/ui/button'
 import { ExternalTastingForm } from '#/components/external-tasting-form'
+import { InventoryEventReviewForm } from '#/components/inventory-event-review-form'
+import { RatingBadge } from '#/components/rating-badge'
 import { TastingEditor } from '#/components/tasting-editor'
-import { fetchTastings, formatWineTitle, updateTasting } from '#/lib/cellar'
-import type { TastingWithWine } from '#/lib/cellar'
+import { Badge } from '#/components/ui/badge'
+import { Button } from '#/components/ui/button'
+import { Card, CardContent } from '#/components/ui/card'
+import {
+  fetchHistory,
+  formatWineTitle,
+  reviewInventoryEvent,
+  updateTasting,
+} from '#/lib/cellar'
+import type { HistoryEntry, HistoryInventoryEvent, Tasting } from '#/lib/cellar'
 
 export const Route = createFileRoute('/history')({
-  loader: () => fetchTastings(),
+  loader: () => fetchHistory(),
   component: HistoryPage,
 })
 
 function HistoryPage() {
-  const tastings = Route.useLoaderData()
+  const history = Route.useLoaderData()
   const [logging, setLogging] = useState(false)
 
   return (
@@ -27,7 +33,7 @@ function HistoryPage() {
             History
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Every bottle opened and reviewed — including wines tasted elsewhere.
+            Every bottle added, removed, opened, and reviewed.
           </p>
         </div>
         <Button
@@ -43,16 +49,16 @@ function HistoryPage() {
         <ExternalTastingForm onDone={() => setLogging(false)} />
       ) : null}
 
-      {tastings.length === 0 ? (
+      {history.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No tastings yet — open something good.
+            No history yet — add a bottle or log a tasting.
           </CardContent>
         </Card>
       ) : (
         <div className="flex flex-col gap-3">
-          {tastings.map((tasting) => (
-            <TastingCard key={tasting.id} tasting={tasting} />
+          {history.map((entry) => (
+            <HistoryCard key={entry.key} entry={entry} />
           ))}
         </div>
       )}
@@ -60,78 +66,175 @@ function HistoryPage() {
   )
 }
 
-function TastingCard({ tasting }: { tasting: TastingWithWine }) {
-  const elsewhere = tasting.context_type !== 'home'
+function HistoryCard({ entry }: { entry: HistoryEntry }) {
   const router = useRouter()
-  const [editing, setEditing] = useState(false)
+  const [addingReview, setAddingReview] = useState(false)
+  const event = entry.event
+  const displayDate = event?.purchase_date ?? entry.sort_at.slice(0, 10)
+  const location = [entry.region, entry.country].filter(Boolean).join(', ')
 
   return (
     <Card>
-      <CardContent className="flex flex-col gap-1.5">
+      <CardContent className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          {tasting.rating != null ? (
-            <RatingBadge
-              rating={tasting.rating}
-              initials={tasting.user_initials}
-              name={tasting.user_name}
-              title={tasting.user_name ?? 'Unknown'}
-            />
-          ) : null}
+          {event ? <InventoryDelta event={event} /> : null}
+          {!event ? <Badge variant="secondary">Review</Badge> : null}
           <Link
             to="/wine/$wineId/"
-            params={{ wineId: String(tasting.wine_id) }}
+            params={{ wineId: String(entry.wine_id) }}
             className="font-medium hover:underline"
           >
-            {formatWineTitle(tasting)}
+            {formatWineTitle(entry)}
           </Link>
-          {tasting.buy_again ? (
-            <Badge variant="outline" className="text-[10px]">
-              would buy again
-            </Badge>
+          {event ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto h-7 px-2 text-xs text-muted-foreground"
+              onClick={() => setAddingReview((value) => !value)}
+            >
+              {addingReview
+                ? 'Cancel review'
+                : entry.reviews.length > 0
+                  ? 'Add another review'
+                  : 'Add review'}
+            </Button>
           ) : null}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto h-7 px-2 text-xs text-muted-foreground"
-            onClick={() => setEditing((value) => !value)}
-          >
-            {editing ? 'Close editor' : 'Edit'}
-          </Button>
         </div>
+
         <div className="text-xs text-muted-foreground">
-          {[
-            tasting.tasted_on,
-            tasting.user_name,
-            elsewhere ? tasting.context_type : null,
-            tasting.venue,
-            [tasting.region, tasting.country].filter(Boolean).join(', '),
-            tasting.price_paid != null
-              ? `$${tasting.price_paid.toFixed(2)}`
-              : null,
-          ]
+          {[displayDate, event ? inventoryAction(event) : null, location]
             .filter(Boolean)
             .join(' · ')}
         </div>
-        {tasting.tasting_notes ? (
-          <p className="text-sm">{tasting.tasting_notes}</p>
-        ) : null}
-        {tasting.food_pairing ? (
+
+        {event?.reason ? <p className="text-sm">{event.reason}</p> : null}
+        {event?.purchase_vendor || event?.purchase_price_per_bottle != null ? (
           <p className="text-xs text-muted-foreground">
-            Paired with {tasting.food_pairing}
+            {[
+              event.purchase_vendor,
+              event.purchase_price_per_bottle != null
+                ? `${event.purchase_currency ?? 'USD'} ${event.purchase_price_per_bottle.toFixed(2)} per bottle`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           </p>
         ) : null}
-        {editing ? (
-          <TastingEditor
-            tasting={tasting}
-            onSave={(update) => updateTasting(tasting.id, update)}
+
+        {entry.reviews.length > 0 ? (
+          <div className="mt-1 flex flex-col gap-3 border-t pt-3">
+            {entry.reviews.map((review) => (
+              <HistoryReview key={review.id} review={review} />
+            ))}
+          </div>
+        ) : event && !addingReview ? (
+          <p className="text-xs text-muted-foreground">No review attached.</p>
+        ) : null}
+
+        {event && addingReview ? (
+          <InventoryEventReviewForm
+            eventDate={displayDate}
+            onSave={(review) => reviewInventoryEvent(event.id, review)}
             onSaved={() => {
-              setEditing(false)
+              setAddingReview(false)
               void router.invalidate()
             }}
-            onCancel={() => setEditing(false)}
+            onCancel={() => setAddingReview(false)}
           />
         ) : null}
       </CardContent>
     </Card>
+  )
+}
+
+function InventoryDelta({ event }: { event: HistoryInventoryEvent }) {
+  const value = event.delta > 0 ? `+${event.delta}` : String(event.delta)
+  return (
+    <Badge
+      variant={event.delta > 0 ? 'secondary' : 'outline'}
+      className="min-w-9 justify-center tabular-nums"
+    >
+      {value}
+    </Badge>
+  )
+}
+
+function inventoryAction(event: HistoryInventoryEvent): string {
+  const bottles = Math.abs(event.delta)
+  const count = `${bottles} bottle${bottles === 1 ? '' : 's'}`
+  if (event.event_type === 'purchase' || event.event_type === 'migration') {
+    return `Added ${count}`
+  }
+  if (event.event_type === 'consume') return `Drank ${count}`
+  if (event.event_type === 'gift') {
+    return event.delta < 0 ? `Gifted ${count}` : `Received ${count}`
+  }
+  return event.delta < 0 ? `Removed ${count}` : `Added ${count}`
+}
+
+function HistoryReview({ review }: { review: Tasting }) {
+  const router = useRouter()
+  const [editing, setEditing] = useState(false)
+  const elsewhere = review.context_type !== 'home'
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2">
+        {review.rating != null ? (
+          <RatingBadge
+            rating={review.rating}
+            initials={review.user_initials}
+            name={review.user_name}
+            title={review.user_name ?? 'Unknown'}
+          />
+        ) : null}
+        <span className="text-sm font-medium">
+          {review.user_name ?? 'Unassigned reviewer'}
+        </span>
+        {review.buy_again ? (
+          <Badge variant="outline" className="text-[10px]">
+            would buy again
+          </Badge>
+        ) : null}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto h-7 px-2 text-xs text-muted-foreground"
+          onClick={() => setEditing((value) => !value)}
+        >
+          {editing ? 'Close editor' : 'Edit'}
+        </Button>
+      </div>
+      <div className="mt-1 text-xs text-muted-foreground">
+        {[
+          review.tasted_on,
+          elsewhere ? review.context_type : null,
+          review.venue,
+          review.price_paid != null ? `$${review.price_paid.toFixed(2)}` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+      </div>
+      {review.tasting_notes ? (
+        <p className="mt-1 text-sm">{review.tasting_notes}</p>
+      ) : null}
+      {review.food_pairing ? (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Paired with {review.food_pairing}
+        </p>
+      ) : null}
+      {editing ? (
+        <TastingEditor
+          tasting={review}
+          onSave={(update) => updateTasting(review.id, update)}
+          onSaved={() => {
+            setEditing(false)
+            void router.invalidate()
+          }}
+          onCancel={() => setEditing(false)}
+        />
+      ) : null}
+    </div>
   )
 }
