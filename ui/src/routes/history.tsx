@@ -8,6 +8,7 @@ import { TastingEditor } from '#/components/tasting-editor'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
+import { WineTypeIcon } from '#/components/wine-type-icon'
 import {
   fetchHistory,
   formatWineTitle,
@@ -79,6 +80,10 @@ function HistoryCard({ entry }: { entry: HistoryEntry }) {
         <div className="flex flex-wrap items-center gap-2">
           {event ? <InventoryDelta event={event} /> : null}
           {!event ? <Badge variant="secondary">Review</Badge> : null}
+          <WineTypeIcon
+            wineType={entry.wine_type}
+            className="h-7 w-5 shrink-0 text-muted-foreground"
+          />
           <Link
             to="/wine/$wineId/"
             params={{ wineId: String(entry.wine_id) }}
@@ -148,12 +153,18 @@ function HistoryCard({ entry }: { entry: HistoryEntry }) {
   )
 }
 
-function InventoryDelta({ event }: { event: HistoryInventoryEvent }) {
+export function InventoryDelta({ event }: { event: HistoryInventoryEvent }) {
   const value = event.delta > 0 ? `+${event.delta}` : String(event.delta)
+  const tone =
+    event.delta > 0
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300'
+      : event.delta < 0
+        ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300'
+        : ''
   return (
     <Badge
-      variant={event.delta > 0 ? 'secondary' : 'outline'}
-      className="min-w-9 justify-center tabular-nums"
+      variant="outline"
+      className={`min-w-9 justify-center tabular-nums ${tone}`}
     >
       {value}
     </Badge>
