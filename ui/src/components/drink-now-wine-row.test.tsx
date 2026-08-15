@@ -6,7 +6,9 @@ import { DrinkNowWineRow } from './drink-now-wine-row'
 import type { CellarItem } from '#/lib/cellar'
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children: React.ReactNode }) => <a href="#">{children}</a>,
+  Link: ({ children }: { children: React.ReactNode }) => (
+    <a href="#">{children}</a>
+  ),
 }))
 
 afterEach(cleanup)
@@ -28,11 +30,13 @@ describe('DrinkNowWineRow', () => {
     render(<DrinkNowWineRow item={wine} year={2026} />)
 
     const row = screen.getByTestId('drink-now-wine-row')
-    expect(Array.from(row.children).map((child) => child.getAttribute('data-slot'))).toEqual([
-      'bottle-count',
-      'wine-details',
-      'drinking-window',
-    ])
+    expect(screen.getByRole('img', { name: 'White wine' })).toBeTruthy()
+    expect(row.children[0].getAttribute('data-wine-type')).toBe('white')
+    expect(
+      Array.from(row.children)
+        .slice(1)
+        .map((child) => child.getAttribute('data-slot')),
+    ).toEqual(['bottle-count', 'wine-details', 'drinking-window'])
     expect(screen.getByLabelText('2 bottles').textContent).toBe('×2')
     expect(screen.getByText('2026').parentElement?.className).toContain(
       'whitespace-nowrap',
