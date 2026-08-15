@@ -2,6 +2,7 @@ import { ExternalLink } from 'lucide-react'
 
 import { Button } from '#/components/ui/button'
 import { TableCell, TableRow } from '#/components/ui/table'
+import { WineTypeIcon } from '#/components/wine-type-icon'
 import { cellarPath } from '#/lib/base-path'
 import type { OrderedWine } from '#/lib/cellar'
 
@@ -59,22 +60,28 @@ export function OrderedWineCard({
       className="min-w-0 overflow-hidden border-b px-4 py-4 last:border-b-0 md:hidden"
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
-          <a
-            href={cellarPath(`/wine/${order.wine_id}/`)}
-            className="block truncate font-medium hover:underline"
-          >
-            {order.producer}
-          </a>
-          <p className="mt-0.5 text-sm leading-snug text-muted-foreground">
-            {order.wine_name}
-            {order.vintage ? ` (${order.vintage})` : ''}
-          </p>
-          {[order.region, order.country].filter(Boolean).length > 0 ? (
-            <p className="mt-1 text-xs text-muted-foreground">
-              {[order.region, order.country].filter(Boolean).join(' · ')}
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <WineTypeIcon
+            wineType={order.wine_type}
+            className="h-9 w-7 shrink-0 text-muted-foreground"
+          />
+          <div className="min-w-0">
+            <a
+              href={cellarPath(`/wine/${order.wine_id}/`)}
+              className="block truncate font-medium hover:underline"
+            >
+              {order.producer}
+            </a>
+            <p className="mt-0.5 text-sm leading-snug text-muted-foreground">
+              {order.wine_name}
+              {order.vintage ? ` (${order.vintage})` : ''}
             </p>
-          ) : null}
+            {[order.region, order.country].filter(Boolean).length > 0 ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {[order.region, order.country].filter(Boolean).join(' · ')}
+              </p>
+            ) : null}
+          </div>
         </div>
         <div className="shrink-0 rounded-full border bg-background/70 px-2.5 py-1 text-sm font-medium tabular-nums">
           {order.quantity} × {formatBottleSize(size)}
@@ -162,18 +169,26 @@ export function OrderedWineRow({
   return (
     <TableRow className="align-top">
       <TableCell className="px-4 py-3 whitespace-normal">
-        <a
-          href={cellarPath(`/wine/${order.wine_id}/`)}
-          className="font-medium hover:underline"
-        >
-          {order.producer}
-        </a>
-        <div className="text-muted-foreground">
-          {order.wine_name}
-          {order.vintage ? ` (${order.vintage})` : ''}
-        </div>
-        <div className="mt-1 text-[10px] text-muted-foreground">
-          {[order.region, order.country].filter(Boolean).join(' · ')}
+        <div className="flex items-start gap-3">
+          <WineTypeIcon
+            wineType={order.wine_type}
+            className="h-8 w-6 shrink-0 text-muted-foreground"
+          />
+          <div className="min-w-0">
+            <a
+              href={cellarPath(`/wine/${order.wine_id}/`)}
+              className="font-medium hover:underline"
+            >
+              {order.producer}
+            </a>
+            <div className="text-muted-foreground">
+              {order.wine_name}
+              {order.vintage ? ` (${order.vintage})` : ''}
+            </div>
+            <div className="mt-1 text-[10px] text-muted-foreground">
+              {[order.region, order.country].filter(Boolean).join(' · ')}
+            </div>
+          </div>
         </div>
       </TableCell>
       <TableCell className="whitespace-normal">
