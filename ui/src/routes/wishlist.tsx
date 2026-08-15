@@ -5,6 +5,7 @@ import { Card, CardContent } from '#/components/ui/card'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { WishlistForm } from '#/components/wishlist-form'
+import { WineTypeIcon } from '#/components/wine-type-icon'
 import {
   fetchWishlist,
   formatWineTitle,
@@ -61,7 +62,7 @@ function WishlistPage() {
   )
 }
 
-function WishlistCard({ entry }: { entry: WishlistEntry }) {
+export function WishlistCard({ entry }: { entry: WishlistEntry }) {
   const router = useRouter()
   const [removing, setRemoving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -80,44 +81,50 @@ function WishlistCard({ entry }: { entry: WishlistEntry }) {
 
   return (
     <Card>
-      <CardContent className="flex flex-col gap-1.5">
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            to="/wine/$wineId/"
-            params={{ wineId: String(entry.wine_id) }}
-            className="font-medium hover:underline"
-          >
-            {formatWineTitle(entry)}
-          </Link>
-          {entry.quantity > 0 ? (
-            <Badge variant="secondary" className="text-[10px]">
-              already have {entry.quantity}
-            </Badge>
-          ) : null}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto"
-            disabled={removing}
-            onClick={() => void remove()}
-          >
-            {removing ? 'Removing…' : 'Remove'}
-          </Button>
+      <CardContent className="flex gap-3">
+        <WineTypeIcon
+          wineType={entry.wine_type}
+          className="mt-0.5 h-10 w-7 shrink-0 text-muted-foreground"
+        />
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to="/wine/$wineId/"
+              params={{ wineId: String(entry.wine_id) }}
+              className="font-medium hover:underline"
+            >
+              {formatWineTitle(entry)}
+            </Link>
+            {entry.quantity > 0 ? (
+              <Badge variant="secondary" className="text-[10px]">
+                already have {entry.quantity}
+              </Badge>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto"
+              disabled={removing}
+              onClick={() => void remove()}
+            >
+              {removing ? 'Removing…' : 'Remove'}
+            </Button>
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {[
+              entry.recommended_by ? `via ${entry.recommended_by}` : null,
+              [entry.region, entry.country].filter(Boolean).join(', '),
+              entry.shop_name,
+              entry.listed_price != null
+                ? `$${entry.listed_price.toFixed(2)}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </div>
+          {entry.reason ? <p className="text-sm">{entry.reason}</p> : null}
+          {error ? <p className="text-xs text-destructive">{error}</p> : null}
         </div>
-        <div className="text-xs text-muted-foreground">
-          {[
-            entry.recommended_by ? `via ${entry.recommended_by}` : null,
-            [entry.region, entry.country].filter(Boolean).join(', '),
-            entry.shop_name,
-            entry.listed_price != null
-              ? `$${entry.listed_price.toFixed(2)}`
-              : null,
-          ]
-            .filter(Boolean)
-            .join(' · ')}
-        </div>
-        {entry.reason ? <p className="text-sm">{entry.reason}</p> : null}
-        {error ? <p className="text-xs text-destructive">{error}</p> : null}
       </CardContent>
     </Card>
   )
