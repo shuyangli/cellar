@@ -44,6 +44,7 @@ describe('OrderedWineRow', () => {
       </table>,
     )
 
+    expect(screen.getByRole('img', { name: 'Sparkling wine' })).toBeTruthy()
     expect(screen.getByText('Camille Jacquet')).toBeTruthy()
     expect(screen.getByText('4 × 750 mL')).toBeTruthy()
     expect(screen.getByText('Expected Aug 7')).toBeTruthy()
@@ -104,6 +105,7 @@ describe('OrderedWineCard', () => {
       name: 'Camille Jacquet Le Mesnil-sur-Oger Brut Grand Cru',
     })
     expect(card.className).toContain('md:hidden')
+    expect(screen.getByRole('img', { name: 'Sparkling wine' })).toBeTruthy()
     expect(screen.getByText('4 × 750 mL')).toBeTruthy()
     expect(screen.getByText('Crush Wine & Spirits')).toBeTruthy()
     expect(screen.getByText('#CW-123')).toBeTruthy()
