@@ -41,14 +41,18 @@ extension Color {
         })
     }
 
-    // Light: the original warm-parchment cellar. Dark: the web UI's plum-black
-    // with crimson accents (ui/src/styles.css).
-    static let appBackground = Color(light: 0xF4EFE7, dark: 0x0D0F14)
-    static let appCard = Color(light: 0xFFFDF8, dark: 0x171920)
-    static let appBorder = Color(light: 0xD9D0C1, dark: 0x363842)
-    static let appBurgundy = Color(light: 0x6C3040, dark: 0x8C2349)
-    static let appRose = Color(light: 0x9A634E, dark: 0xC74D78)
-    static let appKicker = Color(light: 0x6C3040, dark: 0xFFDBE7)
+    // Both palettes mirror the web UI (ui/src/styles.css): porcelain gray with
+    // deep wine in light mode, plum-black with crimson in dark.
+    static let appBackground = Color(light: 0xF3F4F7, dark: 0x0D0F14)
+    static let appCard = Color(light: 0xFAFBFC, dark: 0x171920)
+    static let appBorder = Color(light: 0xD1D3DA, dark: 0x363842)
+    static let appBurgundy = Color(light: 0x761B3B, dark: 0x8C2349)
+    static let appRose = Color(light: 0xA4325C, dark: 0xC74D78)
+    static let appKicker = Color(light: 0x93284F, dark: 0xFFDBE7)
+
+    /// Big serif numerals on cards; brighter than the badge colors so they
+    /// carry enough contrast against both card tones.
+    static let statNumber = Color(light: 0x761B3B, dark: 0xD58B9F)
 
     // Drinking-window urgency
     static let windowCurrent = Color(light: 0x047857, dark: 0x34D399)
@@ -74,8 +78,8 @@ extension Color {
 
 // MARK: - Screen background
 
-/// Warm parchment in light mode; in dark, the web app's plum-black with the
-/// same crimson and slate corner glows.
+/// The web app's screen ground: crimson and slate corner glows over
+/// porcelain gray (light) or plum-black (dark).
 struct CellarBackground: View {
     @Environment(\.colorScheme) private var scheme
 
@@ -83,24 +87,26 @@ struct CellarBackground: View {
         ZStack {
             Color.appBackground
             if scheme == .dark {
-                RadialGradient(
-                    colors: [Color(hex: 0x79163A).opacity(0.30), .clear],
-                    center: UnitPoint(x: 0.11, y: -0.07),
-                    startRadius: 0, endRadius: 480
-                )
-                RadialGradient(
-                    colors: [Color(hex: 0x3E4561).opacity(0.24), .clear],
-                    center: UnitPoint(x: 0.96, y: 0.03),
-                    startRadius: 0, endRadius: 420
-                )
-                RadialGradient(
-                    colors: [Color(hex: 0x671433).opacity(0.16), .clear],
-                    center: UnitPoint(x: 0.58, y: 1.1),
-                    startRadius: 0, endRadius: 520
-                )
+                glow(0x79163A, 0.30, x: 0.11, y: -0.07, radius: 480)
+                glow(0x3E4561, 0.24, x: 0.96, y: 0.03, radius: 420)
+                glow(0x671433, 0.16, x: 0.58, y: 1.1, radius: 520)
+            } else {
+                glow(0x7E1B40, 0.13, x: 0.11, y: -0.07, radius: 480)
+                glow(0x4D587D, 0.12, x: 0.96, y: 0.03, radius: 420)
+                glow(0x7E1B40, 0.07, x: 0.58, y: 1.1, radius: 520)
             }
         }
         .ignoresSafeArea()
+    }
+
+    private func glow(
+        _ hex: UInt32, _ opacity: Double, x: CGFloat, y: CGFloat, radius: CGFloat
+    ) -> some View {
+        RadialGradient(
+            colors: [Color(hex: hex).opacity(opacity), .clear],
+            center: UnitPoint(x: x, y: y),
+            startRadius: 0, endRadius: radius
+        )
     }
 }
 

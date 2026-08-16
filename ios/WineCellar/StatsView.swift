@@ -71,7 +71,7 @@ struct StatsView: View {
                 .font(.title2.weight(.semibold))
                 .fontDesign(.serif)
                 .monospacedDigit()
-                .foregroundStyle(Color.appBurgundy)
+                .foregroundStyle(Color.statNumber)
             Text(label)
                 .font(.caption2)
                 .foregroundStyle(.secondary)

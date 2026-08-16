@@ -11,7 +11,24 @@ struct WineCellarApp: App {
     var body: some Scene {
         WindowGroup {
             RootTabView()
-                .preferredColorScheme((Appearance(rawValue: appearanceRaw) ?? .system).colorScheme)
+                .onAppear { applyAppearance() }
+                .onChange(of: appearanceRaw) { _, _ in applyAppearance() }
+        }
+    }
+
+    /// Window-level override so sheets, alerts, and dialogs all follow the
+    /// setting (SwiftUI's preferredColorScheme doesn't reach presented sheets).
+    private func applyAppearance() {
+        let style: UIUserInterfaceStyle
+        switch Appearance(rawValue: appearanceRaw) ?? .system {
+        case .system: style = .unspecified
+        case .light: style = .light
+        case .dark: style = .dark
+        }
+        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+            for window in scene.windows {
+                window.overrideUserInterfaceStyle = style
+            }
         }
     }
 }

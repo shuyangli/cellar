@@ -165,7 +165,7 @@ struct CellarListView: View {
                 .font(.title2.weight(.semibold))
                 .fontDesign(.serif)
                 .monospacedDigit()
-                .foregroundStyle(Color.appBurgundy)
+                .foregroundStyle(Color.statNumber)
             Text(label)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -311,7 +311,7 @@ struct WineRow: View {
         .swipeActions(edge: .trailing) {
             if wine.quantity >= 1 {
                 Button("Drink one", action: drinkOne)
-                    .tint(Color(hex: 0x6C3040))
+                    .tint(Color.appBurgundy)
             }
             if wine.quantity > 1 {
                 Button("Drink all", action: drinkAll)
