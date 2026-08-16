@@ -31,6 +31,10 @@ extension Color {
 
 /// Vector glass whose liquid color encodes the wine type; sparkling pours
 /// into a champagne flute with rising bubbles.
+///
+/// The liquid is the bowl silhouette itself clipped at the fill line (and the
+/// bubbles are clipped to the bowl), so contents can never drift outside the
+/// glass at any render size.
 struct WineTypeIcon: View {
     var wineType: String?
     var size: CGFloat = 28
@@ -39,17 +43,18 @@ struct WineTypeIcon: View {
         let fill = Color.wineFill(wineType)
         ZStack {
             if wineType == "sparkling" {
-                FluteFizzShape()
-                    .fill(fill.opacity(0.8))
-                FluteLiquidShape()
+                FluteBowlShape()
                     .fill(fill.opacity(0.92))
-                FluteOutlineShape()
-                    .stroke(Color.secondary.opacity(0.75), lineWidth: 1.6)
+                    .clipShape(BandShape(top: 8.5))
                 FluteBubblesShape()
                     .fill(Color(hex: 0xFFF7CC).opacity(0.95))
+                    .clipShape(FluteBowlShape())
+                FluteOutlineShape()
+                    .stroke(Color.secondary.opacity(0.75), lineWidth: 1.6)
             } else {
                 GlassBowlShape()
                     .fill(fill.opacity(0.92))
+                    .clipShape(BandShape(top: 13.5))
                 GlassOutlineShape()
                     .stroke(Color.secondary.opacity(0.75), lineWidth: 1.6)
             }
@@ -59,34 +64,26 @@ struct WineTypeIcon: View {
     }
 }
 
-/// The liquid inside the bowl (drawn in a 32x40 design space).
+/// Horizontal band from a design-space y to the bottom; intersecting a bowl
+/// silhouette with this (via clipShape) yields the liquid.
+private struct BandShape: Shape {
+    var top: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let sy = rect.height / 40
+        return Path(CGRect(
+            x: rect.minX, y: rect.minY + top * sy,
+            width: rect.width, height: max(0, rect.height - top * sy)
+        ))
+    }
+}
+
+/// Full bowl silhouette in the 32x40 design space (shared by the liquid clip
+/// and the outline so they always coincide).
 private struct GlassBowlShape: Shape {
     func path(in rect: CGRect) -> Path {
         let sx = rect.width / 32, sy = rect.height / 40
         var path = Path()
-        // Liquid: lower half of the bowl.
-        path.move(to: CGPoint(x: 7 * sx, y: 14 * sy))
-        path.addLine(to: CGPoint(x: 25 * sx, y: 14 * sy))
-        path.addCurve(
-            to: CGPoint(x: 16 * sx, y: 24 * sy),
-            control1: CGPoint(x: 25 * sx, y: 20 * sy),
-            control2: CGPoint(x: 21.5 * sx, y: 24 * sy)
-        )
-        path.addCurve(
-            to: CGPoint(x: 7 * sx, y: 14 * sy),
-            control1: CGPoint(x: 10.5 * sx, y: 24 * sy),
-            control2: CGPoint(x: 7 * sx, y: 20 * sy)
-        )
-        path.closeSubpath()
-        return path
-    }
-}
-
-private struct GlassOutlineShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        let sx = rect.width / 32, sy = rect.height / 40
-        var path = Path()
-        // Bowl
         path.move(to: CGPoint(x: 6 * sx, y: 6 * sy))
         path.addLine(to: CGPoint(x: 26 * sx, y: 6 * sy))
         path.addCurve(
@@ -100,9 +97,17 @@ private struct GlassOutlineShape: Shape {
             control2: CGPoint(x: 6 * sx, y: 17 * sy)
         )
         path.closeSubpath()
-        // Stem
+        return path
+    }
+}
+
+private struct GlassOutlineShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let sx = rect.width / 32, sy = rect.height / 40
+        var path = GlassBowlShape().path(in: rect)
+        // Stem, meeting the foot line
         path.move(to: CGPoint(x: 16 * sx, y: 24.5 * sy))
-        path.addLine(to: CGPoint(x: 16 * sx, y: 34 * sy))
+        path.addLine(to: CGPoint(x: 16 * sx, y: 36 * sy))
         // Foot
         path.move(to: CGPoint(x: 9 * sx, y: 36 * sy))
         path.addLine(to: CGPoint(x: 23 * sx, y: 36 * sy))
@@ -110,12 +115,12 @@ private struct GlassOutlineShape: Shape {
     }
 }
 
-/// Champagne flute: narrow rim, near-vertical sides, rounded base.
-private struct FluteOutlineShape: Shape {
+/// Champagne flute bowl silhouette: narrow rim, near-vertical sides, rounded
+/// base (shared by the liquid clip and the outline).
+private struct FluteBowlShape: Shape {
     func path(in rect: CGRect) -> Path {
         let sx = rect.width / 32, sy = rect.height / 40
         var path = Path()
-        // Bowl
         path.move(to: CGPoint(x: 12.3 * sx, y: 4 * sy))
         path.addLine(to: CGPoint(x: 19.7 * sx, y: 4 * sy))
         path.addLine(to: CGPoint(x: 19.2 * sx, y: 18.5 * sy))
@@ -125,9 +130,17 @@ private struct FluteOutlineShape: Shape {
             control2: CGPoint(x: 12.8 * sx, y: 22.5 * sy)
         )
         path.closeSubpath()
-        // Stem
+        return path
+    }
+}
+
+private struct FluteOutlineShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let sx = rect.width / 32, sy = rect.height / 40
+        var path = FluteBowlShape().path(in: rect)
+        // Stem from the bowl base to the foot line
         path.move(to: CGPoint(x: 16 * sx, y: 21.5 * sy))
-        path.addLine(to: CGPoint(x: 16 * sx, y: 34 * sy))
+        path.addLine(to: CGPoint(x: 16 * sx, y: 36 * sy))
         // Foot
         path.move(to: CGPoint(x: 9 * sx, y: 36 * sy))
         path.addLine(to: CGPoint(x: 23 * sx, y: 36 * sy))
@@ -135,45 +148,12 @@ private struct FluteOutlineShape: Shape {
     }
 }
 
-/// The champagne inside the flute, filled nearly to the rim.
-private struct FluteLiquidShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        let sx = rect.width / 32, sy = rect.height / 40
-        var path = Path()
-        path.move(to: CGPoint(x: 12.98 * sx, y: 9 * sy))
-        path.addLine(to: CGPoint(x: 19.02 * sx, y: 9 * sy))
-        path.addLine(to: CGPoint(x: 18.7 * sx, y: 18.2 * sy))
-        path.addCurve(
-            to: CGPoint(x: 13.3 * sx, y: 18.2 * sy),
-            control1: CGPoint(x: 18.7 * sx, y: 21.6 * sy),
-            control2: CGPoint(x: 13.3 * sx, y: 21.6 * sy)
-        )
-        path.closeSubpath()
-        return path
-    }
-}
-
-/// Pale bubbles rising up the middle of the flute.
+/// Pale bubbles rising up the middle of the pour.
 private struct FluteBubblesShape: Shape {
     func path(in rect: CGRect) -> Path {
         let sx = rect.width / 32, sy = rect.height / 40
         var path = Path()
-        for (x, y, r) in [(15.4, 12.0, 0.6), (16.8, 14.8, 0.5), (15.8, 17.4, 0.45)] {
-            path.addEllipse(in: CGRect(
-                x: (x - r) * sx, y: (y - r) * sy,
-                width: 2 * r * sx, height: 2 * r * sy
-            ))
-        }
-        return path
-    }
-}
-
-/// Fizz escaping past the rim.
-private struct FluteFizzShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        let sx = rect.width / 32, sy = rect.height / 40
-        var path = Path()
-        for (x, y, r) in [(10.4, 6.8, 1.05), (21.6, 8.2, 0.8)] {
+        for (x, y, r) in [(15.3, 11.0, 0.62), (16.9, 13.2, 0.52), (15.5, 15.6, 0.5), (16.5, 18.2, 0.45)] {
             path.addEllipse(in: CGRect(
                 x: (x - r) * sx, y: (y - r) * sy,
                 width: 2 * r * sx, height: 2 * r * sy

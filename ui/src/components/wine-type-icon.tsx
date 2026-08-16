@@ -1,3 +1,5 @@
+import { useId } from 'react'
+
 type WineTypeIconProps = {
   wineType: string | null
   className?: string
@@ -29,11 +31,19 @@ const FALLBACK_STYLE: IconStyle = {
   color: '#a1a1aa',
 }
 
-/** A compact wine-glass marker: liquid color shows the style; sparkling wine pours into a champagne flute. */
+const BOWL_PATH = 'M8 4h16l-1.1 10.4A7 7 0 0 1 16 20.7a7 7 0 0 1-6.9-6.3L8 4Z'
+const FLUTE_PATH = 'M12.3 4h7.4l-.5 14.5a3.2 3.2 0 0 1-6.4 0Z'
+
+/**
+ * A compact wine-glass marker: liquid color shows the style; sparkling wine
+ * pours into a champagne flute. The liquid is a band clipped by the bowl
+ * silhouette itself, so contents can never drift outside the glass.
+ */
 export function WineTypeIcon({ wineType, className = '' }: WineTypeIconProps) {
   const style = wineType
     ? (ICON_STYLES[wineType] ?? FALLBACK_STYLE)
     : FALLBACK_STYLE
+  const clipId = useId()
 
   return (
     <svg
@@ -45,29 +55,29 @@ export function WineTypeIcon({ wineType, className = '' }: WineTypeIconProps) {
     >
       {style.sparkling ? (
         <>
-          <g fill={style.color} opacity="0.8" aria-hidden="true">
-            <circle cx="10.4" cy="6.8" r="1.05" />
-            <circle cx="21.6" cy="8.2" r="0.8" />
+          <defs>
+            <clipPath id={clipId}>
+              <path d={FLUTE_PATH} />
+            </clipPath>
+          </defs>
+          <g clipPath={`url(#${clipId})`} aria-hidden="true">
+            <rect x="11" y="8.5" width="10" height="14" fill={style.color} opacity="0.92" />
+            <g fill="#fff7cc" opacity="0.95">
+              <circle cx="15.3" cy="11" r="0.62" />
+              <circle cx="16.9" cy="13.2" r="0.52" />
+              <circle cx="15.5" cy="15.6" r="0.5" />
+              <circle cx="16.5" cy="18.2" r="0.45" />
+            </g>
           </g>
           <path
-            d="M12.3 4h7.4l-.5 14.5a3.2 3.2 0 0 1-6.4 0L12.3 4Z"
+            d={FLUTE_PATH}
             fill="none"
             stroke="currentColor"
             strokeWidth="1.7"
             strokeLinejoin="round"
           />
           <path
-            d="M12.98 9h6.04l-.32 9.2a2.7 2.7 0 0 1-5.4 0L12.98 9Z"
-            fill={style.color}
-            opacity="0.92"
-          />
-          <g fill="#fff7cc" opacity="0.95" aria-hidden="true">
-            <circle cx="15.4" cy="12" r="0.6" />
-            <circle cx="16.8" cy="14.8" r="0.5" />
-            <circle cx="15.8" cy="17.4" r="0.45" />
-          </g>
-          <path
-            d="M16 21.7v11.8M11.5 36h9"
+            d="M16 21.7v14.3M11.5 36h9"
             fill="none"
             stroke="currentColor"
             strokeWidth="1.7"
@@ -76,20 +86,23 @@ export function WineTypeIcon({ wineType, className = '' }: WineTypeIconProps) {
         </>
       ) : (
         <>
+          <defs>
+            <clipPath id={clipId}>
+              <path d={BOWL_PATH} />
+            </clipPath>
+          </defs>
+          <g clipPath={`url(#${clipId})`} aria-hidden="true">
+            <rect x="6" y="12.5" width="20" height="10" fill={style.color} opacity="0.92" />
+          </g>
           <path
-            d="M8 4h16l-1.1 10.4A7 7 0 0 1 16 20.7a7 7 0 0 1-6.9-6.3L8 4Z"
+            d={BOWL_PATH}
             fill="none"
             stroke="currentColor"
             strokeWidth="1.7"
             strokeLinejoin="round"
           />
           <path
-            d="M9.7 12.5h12.6l-.2 1.7A6.15 6.15 0 0 1 16 19.7a6.15 6.15 0 0 1-6.1-5.5l-.2-1.7Z"
-            fill={style.color}
-            opacity="0.92"
-          />
-          <path
-            d="M16 20.7v12.8M11.5 36h9"
+            d="M16 20.7v15.3M11.5 36h9"
             fill="none"
             stroke="currentColor"
             strokeWidth="1.7"

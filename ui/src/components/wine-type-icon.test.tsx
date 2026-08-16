@@ -17,14 +17,18 @@ describe('WineTypeIcon', () => {
     (type, label, color) => {
       const { container } = render(<WineTypeIcon wineType={type} />)
       expect(screen.getByRole('img', { name: label })).toBeDefined()
-      expect(container.querySelector(`path[fill="${color}"]`)).not.toBeNull()
+      expect(container.querySelector(`rect[fill="${color}"]`)).not.toBeNull()
     },
   )
 
-  it('adds bubbles for sparkling wine', () => {
+  it('adds bubbles inside the flute for sparkling wine', () => {
     const { container } = render(<WineTypeIcon wineType="sparkling" />)
     expect(screen.getByRole('img', { name: 'Sparkling wine' })).toBeDefined()
-    expect(container.querySelectorAll('circle')).toHaveLength(5)
+    expect(container.querySelectorAll('circle')).toHaveLength(4)
+    // Liquid and bubbles are clipped by the bowl silhouette.
+    const clipped = container.querySelector('g[clip-path]')
+    expect(clipped).not.toBeNull()
+    expect(clipped?.querySelectorAll('circle')).toHaveLength(4)
   })
 
   it('uses a neutral accessible fallback for missing types', () => {
