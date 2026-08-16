@@ -50,7 +50,7 @@ struct WineTypeIcon: View {
             if wineType == "sparkling" {
                 FluteBowlShape()
                     .fill(fill.opacity(0.92))
-                    .clipShape(BandShape(top: 8.5))
+                    .clipShape(BandShape(top: 8))
                 FluteBubblesShape()
                     .fill(Color(hex: 0xFFF7CC).opacity(0.95))
                     .clipShape(FluteBowlShape())
@@ -59,7 +59,7 @@ struct WineTypeIcon: View {
             } else {
                 GlassBowlShape()
                     .fill(fill.opacity(0.92))
-                    .clipShape(BandShape(top: 12.5))
+                    .clipShape(BandShape(top: 12))
                 GlassOutlineShape()
                     .stroke(Color.secondary.opacity(0.75), lineWidth: 1.6)
             }
@@ -89,18 +89,18 @@ private struct GlassBowlShape: Shape {
     func path(in rect: CGRect) -> Path {
         let sx = rect.width / 32, sy = rect.height / 40
         var path = Path()
-        path.move(to: CGPoint(x: 8 * sx, y: 4 * sy))
-        path.addLine(to: CGPoint(x: 24 * sx, y: 4 * sy))
-        path.addLine(to: CGPoint(x: 22.9 * sx, y: 14.4 * sy))
+        path.move(to: CGPoint(x: 7.4 * sx, y: 4 * sy))
+        path.addLine(to: CGPoint(x: 24.6 * sx, y: 4 * sy))
+        path.addLine(to: CGPoint(x: 23.3 * sx, y: 15.8 * sy))
         path.addCurve(
-            to: CGPoint(x: 16 * sx, y: 20.7 * sy),
-            control1: CGPoint(x: 21.9 * sx, y: 18.6 * sy),
-            control2: CGPoint(x: 19.6 * sx, y: 20.7 * sy)
+            to: CGPoint(x: 16 * sx, y: 22.8 * sy),
+            control1: CGPoint(x: 22.2 * sx, y: 20.6 * sy),
+            control2: CGPoint(x: 19.8 * sx, y: 22.8 * sy)
         )
         path.addCurve(
-            to: CGPoint(x: 9.1 * sx, y: 14.4 * sy),
-            control1: CGPoint(x: 12.4 * sx, y: 20.7 * sy),
-            control2: CGPoint(x: 10.1 * sx, y: 18.6 * sy)
+            to: CGPoint(x: 8.7 * sx, y: 15.8 * sy),
+            control1: CGPoint(x: 12.2 * sx, y: 22.8 * sy),
+            control2: CGPoint(x: 9.8 * sx, y: 20.6 * sy)
         )
         path.closeSubpath()
         return path
@@ -112,7 +112,7 @@ private struct GlassOutlineShape: Shape {
         let sx = rect.width / 32, sy = rect.height / 40
         var path = GlassBowlShape().path(in: rect)
         // Stem, meeting the foot line
-        path.move(to: CGPoint(x: 16 * sx, y: 20.7 * sy))
+        path.move(to: CGPoint(x: 16 * sx, y: 22.8 * sy))
         path.addLine(to: CGPoint(x: 16 * sx, y: 36 * sy))
         // Foot
         path.move(to: CGPoint(x: 11.5 * sx, y: 36 * sy))
@@ -127,27 +127,27 @@ private struct FluteBowlShape: Shape {
     func path(in rect: CGRect) -> Path {
         let sx = rect.width / 32, sy = rect.height / 40
         var path = Path()
-        path.move(to: CGPoint(x: 13 * sx, y: 4 * sy))
-        path.addLine(to: CGPoint(x: 19 * sx, y: 4 * sy))
+        path.move(to: CGPoint(x: 12.8 * sx, y: 4 * sy))
+        path.addLine(to: CGPoint(x: 19.2 * sx, y: 4 * sy))
         path.addCurve(
-            to: CGPoint(x: 20.8 * sx, y: 12.6 * sy),
-            control1: CGPoint(x: 19.7 * sx, y: 6.3 * sy),
-            control2: CGPoint(x: 20.8 * sx, y: 9 * sy)
+            to: CGPoint(x: 21.3 * sx, y: 13.2 * sy),
+            control1: CGPoint(x: 20 * sx, y: 6.6 * sy),
+            control2: CGPoint(x: 21.3 * sx, y: 9.4 * sy)
         )
         path.addCurve(
-            to: CGPoint(x: 16 * sx, y: 21.4 * sy),
-            control1: CGPoint(x: 20.8 * sx, y: 17 * sy),
-            control2: CGPoint(x: 18.8 * sx, y: 20.4 * sy)
+            to: CGPoint(x: 16 * sx, y: 22.7 * sy),
+            control1: CGPoint(x: 21.3 * sx, y: 17.9 * sy),
+            control2: CGPoint(x: 19 * sx, y: 21.6 * sy)
         )
         path.addCurve(
-            to: CGPoint(x: 11.2 * sx, y: 12.6 * sy),
-            control1: CGPoint(x: 13.2 * sx, y: 20.4 * sy),
-            control2: CGPoint(x: 11.2 * sx, y: 17 * sy)
+            to: CGPoint(x: 10.7 * sx, y: 13.2 * sy),
+            control1: CGPoint(x: 13 * sx, y: 21.6 * sy),
+            control2: CGPoint(x: 10.7 * sx, y: 17.9 * sy)
         )
         path.addCurve(
-            to: CGPoint(x: 13 * sx, y: 4 * sy),
-            control1: CGPoint(x: 11.2 * sx, y: 9 * sy),
-            control2: CGPoint(x: 12.3 * sx, y: 6.3 * sy)
+            to: CGPoint(x: 12.8 * sx, y: 4 * sy),
+            control1: CGPoint(x: 10.7 * sx, y: 9.4 * sy),
+            control2: CGPoint(x: 12 * sx, y: 6.6 * sy)
         )
         path.closeSubpath()
         return path
@@ -159,7 +159,7 @@ private struct FluteOutlineShape: Shape {
         let sx = rect.width / 32, sy = rect.height / 40
         var path = FluteBowlShape().path(in: rect)
         // Stem from the bowl base to the foot line
-        path.move(to: CGPoint(x: 16 * sx, y: 21.4 * sy))
+        path.move(to: CGPoint(x: 16 * sx, y: 22.7 * sy))
         path.addLine(to: CGPoint(x: 16 * sx, y: 36 * sy))
         // Foot
         path.move(to: CGPoint(x: 11.5 * sx, y: 36 * sy))
@@ -173,7 +173,7 @@ private struct FluteBubblesShape: Shape {
     func path(in rect: CGRect) -> Path {
         let sx = rect.width / 32, sy = rect.height / 40
         var path = Path()
-        for (x, y, r) in [(15.4, 11.0, 0.6), (16.9, 13.4, 0.52), (15.5, 16.0, 0.5), (16.4, 18.6, 0.42)] {
+        for (x, y, r) in [(15.3, 11.0, 0.65), (17.0, 13.6, 0.55), (15.4, 16.4, 0.52), (16.6, 19.2, 0.45)] {
             path.addEllipse(in: CGRect(
                 x: (x - r) * sx, y: (y - r) * sy,
                 width: 2 * r * sx, height: 2 * r * sy

@@ -188,7 +188,9 @@ struct CellarListView: View {
                         Task { await model.load() }
                     }
                 }
-                chip(model.showAll ? "showing all" : "in stock", active: model.showAll) {
+                // Stable label (filled = filter on) — a self-renaming chip
+                // reads as appearing/disappearing and shifts the layout.
+                chip("in stock only", active: !model.showAll) {
                     model.showAll.toggle()
                     Task { await model.load() }
                 }
@@ -202,8 +204,10 @@ struct CellarListView: View {
     private func chip(_ label: String, active: Bool, action: @escaping () -> Void) -> some View {
         let shape = Capsule()
         Button(action: action) {
+            // Constant weight: a weight change on activation resizes the chip
+            // and reflows the whole wrapped row.
             Text(label)
-                .font(.footnote.weight(active ? .medium : .regular))
+                .font(.footnote.weight(.medium))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background {
