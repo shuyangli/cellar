@@ -7,22 +7,33 @@ struct HistoryView: View {
 
     var body: some View {
         NavigationStack {
+            // Plain ScrollView instead of List: expansion animates smoothly
+            // (no UIKit row-height fighting) and each button in a card is
+            // hit-tested individually (List fires every borderless button in
+            // a row on any tap).
             AsyncContent(value: entries, error: error, retry: { Task { await load() } }) { entries in
-                List {
-                    if entries.isEmpty {
-                        ContentUnavailableView(
-                            "No history yet",
-                            systemImage: "clock.arrow.circlepath",
-                            description: Text("Add a bottle or log a tasting.")
-                        )
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        if entries.isEmpty {
+                            ContentUnavailableView(
+                                "No history yet",
+                                systemImage: "clock.arrow.circlepath",
+                                description: Text("Add a bottle or log a tasting.")
+                            )
+                            .padding(.top, 60)
+                        }
+                        ForEach(entries) { entry in
+                            HistoryRowView(entry: entry) { Task { await load() } }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.appCard, in: RoundedRectangle(cornerRadius: 14))
+                        }
                     }
-                    ForEach(entries) { entry in
-                        HistoryRowView(entry: entry) { Task { await load() } }
-                            .listRowBackground(Color.appCard)
-                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
                 }
-                .listStyle(.insetGrouped)
-                .cellarBackground()
+                .background(CellarBackground())
                 .refreshable { await load() }
             }
             .navigationTitle("History")
@@ -82,13 +93,13 @@ struct HistoryRowView: View {
                 withAnimation(.snappy) { expanded.toggle() }
             } label: {
                 collapsedRow
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             if expanded {
                 expandedPanel
             }
         }
-        .padding(.vertical, 2)
     }
 
     private var collapsedRow: some View {
