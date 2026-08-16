@@ -24,6 +24,8 @@ wine-detail edits, review edits, and deletion of mistaken records.
   - `cli.py` — `cellar`, same operations as JSON-printing subcommands
   - `web.py` — `cellar-web`, FastAPI app + static UI serving
 - `ui/` — TanStack Start + shadcn UI, built in SPA mode
+- `ios/` — native SwiftUI app ("Cellar Browser" on TestFlight), same API over
+  the tailnet; see [ios/README.md](ios/README.md) for build and release docs
 - `scripts/` — launchd install/uninstall
 - `docs/hermes-cellar-manager.md` — instruction snippet for the Hermes agent
 
@@ -72,6 +74,14 @@ tailscale serve --bg --https=443 http://127.0.0.1:8788
 ```
 
 Then open `https://<machine-name>.<tailnet>.ts.net` from any tailnet device.
+
+### iOS app (TestFlight)
+
+A native SwiftUI client lives in `ios/` and installs on phones via TestFlight
+as **Cellar Browser**. It talks to the same API over the tailnet
+(`http://claw/cellar` by default, overridable in the app's Settings). Updates
+are pushed with three headless commands — see
+[ios/README.md](ios/README.md#deploying-updates-testflight).
 
 ## Agent integration (Hermes)
 
