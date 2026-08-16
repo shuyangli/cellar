@@ -13,9 +13,9 @@ const NAV_LINKS = [
 ] as const
 
 const NAV_LINK_CLASS =
-  'rounded-full px-3 py-1.5 text-sm whitespace-nowrap text-muted-foreground transition-all duration-200 hover:bg-white/[0.045] hover:text-foreground'
+  'cellar-nav-link rounded-full px-3 py-1.5 text-sm whitespace-nowrap text-muted-foreground transition-all duration-200 hover:text-foreground'
 const ACTIVE_NAV_LINK_CLASS =
-  'rounded-full px-3 py-1.5 text-sm whitespace-nowrap bg-primary font-medium text-primary-foreground shadow-[0_6px_18px_rgb(121_25_60/0.28),inset_0_1px_rgb(255_255_255/0.12)]'
+  'cellar-nav-link--active rounded-full px-3 py-1.5 text-sm whitespace-nowrap bg-primary font-medium text-primary-foreground'
 
 const subscribeToHydration = () => () => undefined
 const hydratedSnapshot = () => true

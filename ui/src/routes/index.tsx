@@ -114,10 +114,10 @@ function Hero({ summary }: { summary: CellarPayload['summary'] }) {
   return (
     <div className="flex flex-col gap-7 md:flex-row md:items-end md:justify-between">
       <div>
-        <p className="cellar-kicker text-[0.68rem] font-semibold text-[#d66e96] uppercase">
+        <p className="cellar-kicker text-[0.68rem] font-semibold uppercase">
           Private cellar view
         </p>
-        <h1 className="font-heading mt-1.5 bg-[linear-gradient(110deg,#f8f4f6_8%,#e9c3d0_52%,#be4a75)] bg-clip-text text-5xl font-medium tracking-[-0.025em] text-transparent md:text-6xl">
+        <h1 className="cellar-title font-heading mt-1.5 bg-clip-text text-5xl font-medium tracking-[-0.025em] text-transparent md:text-6xl">
           Cellar
         </h1>
         <p className="mt-1.5 text-sm text-muted-foreground">
@@ -166,7 +166,7 @@ function FilterBar({ search }: { search: CellarSearch }) {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/[0.07] bg-card/55 p-2.5 shadow-[0_12px_36px_rgb(0_0_0/0.16)] backdrop-blur-xl">
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/75 bg-card/55 p-2.5 shadow-[0_12px_36px_rgb(0_0_0/0.12)] backdrop-blur-xl">
       <form
         className="flex min-w-0 flex-1 items-center gap-2"
         onSubmit={(event) => {

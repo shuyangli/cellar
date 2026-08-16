@@ -25,6 +25,20 @@ export const Route = createRootRoute({
         content: 'width=device-width, initial-scale=1',
       },
       {
+        name: 'color-scheme',
+        content: 'light dark',
+      },
+      {
+        name: 'theme-color',
+        content: '#f3f4f7',
+        media: '(prefers-color-scheme: light)',
+      },
+      {
+        name: 'theme-color',
+        content: '#0d0f14',
+        media: '(prefers-color-scheme: dark)',
+      },
+      {
         title: 'Wine Cellar',
       },
     ],
