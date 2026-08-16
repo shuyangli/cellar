@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { TypeChip } from '#/routes/index'
+import { TypeChip, outOfStockToggleLabel } from '#/routes/index'
 
 afterEach(cleanup)
 
@@ -24,5 +24,10 @@ describe('TypeChip', () => {
     expect(chip.getAttribute('aria-pressed')).toBe('true')
     fireEvent.click(chip)
     expect(onClick).toHaveBeenCalledOnce()
+  })
+
+  it('makes the out-of-stock action explicit in both states', () => {
+    expect(outOfStockToggleLabel(false)).toBe('Show out-of-stock wines')
+    expect(outOfStockToggleLabel(true)).toBe('Hide out-of-stock wines')
   })
 })
