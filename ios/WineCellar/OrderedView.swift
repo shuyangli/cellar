@@ -46,6 +46,9 @@ struct OrderedListView: View {
             .cellarBackground()
             .refreshable { await load() }
         }
+        .navigationDestination(for: OrderedWine.self) { order in
+            OrderedWineDetailView(order: order) { Task { await load() } }
+        }
         .task { if orders == nil { await load() } }
     }
 
@@ -80,7 +83,7 @@ struct OrderedWineRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            NavigationLink(value: order.wineId) {
+            NavigationLink(value: order) {
                 HStack(alignment: .top, spacing: 10) {
                     WineTypeIcon(wineType: order.wineType, size: 34)
                     VStack(alignment: .leading, spacing: 2) {
@@ -188,5 +191,153 @@ struct OrderedWineRow: View {
                     .lineLimit(3)
             }
         }
+    }
+}
+
+// MARK: - Order detail
+
+/// Full dossier for a single order line: everything the row summarizes plus
+/// the complete notes, status, and a link into the wine's own detail view.
+struct OrderedWineDetailView: View {
+    var onChanged: () -> Void
+
+    @State private var order: OrderedWine
+    @State private var pending = false
+    @State private var error: String?
+
+    init(order: OrderedWine, onChanged: @escaping () -> Void) {
+        self.onChanged = onChanged
+        _order = State(initialValue: order)
+    }
+
+    var body: some View {
+        List {
+            wineSection
+            orderSection
+            deliverySection
+            if let notes = order.notes, !notes.isEmpty {
+                Section("Order notes") {
+                    Text(notes).font(.callout)
+                }
+                .listRowBackground(Color.appCard)
+            }
+            if order.status != "arrived" {
+                actionSection
+            }
+        }
+        .listStyle(.insetGrouped)
+        .cellarBackground()
+        .navigationTitle("Order")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var wineSection: some View {
+        Section {
+            HStack(alignment: .top, spacing: 12) {
+                WineTypeIcon(wineType: order.wineType, size: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(order.producer)
+                        .font(.headline)
+                    Text([order.wineName, order.vintage.map { "(\($0))" }]
+                        .compactMap { $0?.isEmpty == false ? $0 : nil }
+                        .joined(separator: " "))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    let origin = [order.region, order.country]
+                        .compactMap { $0?.isEmpty == false ? $0 : nil }
+                        .joined(separator: " · ")
+                    if !origin.isEmpty {
+                        Text(origin)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            NavigationLink(value: order.wineId) {
+                Label("Full wine details", systemImage: "wineglass")
+                    .font(.subheadline)
+            }
+        }
+        .listRowBackground(Color.appCard)
+    }
+
+    private var orderSection: some View {
+        Section("Order") {
+            LabeledContent("Quantity", value: "\(order.quantity) × \(Format.bottleSize(order.bottleSizeMl))")
+            LabeledContent("Vendor", value: order.vendor?.isEmpty == false ? order.vendor! : "Pending")
+            if let reference = order.orderReference, !reference.isEmpty {
+                LabeledContent("Reference", value: reference)
+            }
+            if let date = Format.longDate(order.orderedOn) {
+                LabeledContent("Ordered on", value: date)
+            }
+            if let price = order.pricePerBottle {
+                LabeledContent("Price per bottle", value: Format.price(price, currency: order.currency))
+                LabeledContent("Total", value: Format.price(price * Double(order.quantity), currency: order.currency))
+            }
+        }
+        .listRowBackground(Color.appCard)
+    }
+
+    private var deliverySection: some View {
+        Section("Delivery") {
+            LabeledContent("Status") {
+                if order.status == "arrived" {
+                    TextBadge(
+                        text: "Arrived\(Format.longDate(order.arrivedOn).map { " \($0)" } ?? "")",
+                        variant: .secondary
+                    )
+                } else {
+                    TextBadge(text: "On the way", variant: .outline)
+                }
+            }
+            if let date = Format.longDate(order.expectedOn) {
+                LabeledContent("Expected", value: date)
+            }
+            if let tracking = order.trackingUrl, let url = URL(string: tracking) {
+                Link(destination: url) {
+                    HStack {
+                        Text("Track shipment")
+                        Spacer()
+                        Image(systemName: "arrow.up.right.square")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                LabeledContent("Tracking", value: "Pending")
+            }
+        }
+        .listRowBackground(Color.appCard)
+    }
+
+    private var actionSection: some View {
+        Section {
+            Button {
+                Task { await markArrived() }
+            } label: {
+                Text(pending ? "Arriving…" : "Mark arrived")
+                    .font(.subheadline.weight(.medium))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(pending)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets())
+            if let error {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+        }
+    }
+
+    private func markArrived() async {
+        pending = true
+        error = nil
+        do {
+            order = try await CellarAPI.shared.orderedWineArrive(order.id)
+            onChanged()
+        } catch {
+            self.error = error.localizedDescription
+        }
+        pending = false
     }
 }

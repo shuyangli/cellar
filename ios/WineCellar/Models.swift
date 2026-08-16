@@ -251,7 +251,7 @@ struct WishlistEntry: Decodable, Identifiable {
 
 // MARK: - Ordered wines
 
-struct OrderedWine: Decodable, Identifiable {
+struct OrderedWine: Decodable, Identifiable, Hashable {
     var id: Int
     var wineId: Int
     var quantity: Int
