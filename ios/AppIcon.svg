@@ -1,0 +1,77 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#331021"/>
+      <stop offset="0.55" stop-color="#1C0913"/>
+      <stop offset="1" stop-color="#0E040A"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.42" r="0.55">
+      <stop offset="0" stop-color="#8C2349" stop-opacity="0.5"/>
+      <stop offset="0.6" stop-color="#8C2349" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#8C2349" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="cornerGlow" cx="0.92" cy="0.06" r="0.5">
+      <stop offset="0" stop-color="#3E4561" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#3E4561" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0.2" x2="0" y2="1">
+      <stop offset="0" stop-color="#F0D79A"/>
+      <stop offset="1" stop-color="#C0913F"/>
+    </linearGradient>
+    <linearGradient id="wine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#A62D55"/>
+      <stop offset="1" stop-color="#470D20"/>
+    </linearGradient>
+    <linearGradient id="wineSurface" x1="0" y1="0" x2="1" y2="0.4">
+      <stop offset="0" stop-color="#D06287"/>
+      <stop offset="0.5" stop-color="#A62D55"/>
+      <stop offset="1" stop-color="#7C1B3D"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Ground -->
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+  <rect width="1024" height="1024" fill="url(#cornerGlow)"/>
+
+  <!-- Wine: fills the lower cone up to just below the shoulder kink -->
+  <path d="M 332 500
+           Q 330 516 346 529
+           L 484 633
+           Q 502 647 512 647
+           Q 522 647 540 633
+           L 678 529
+           Q 694 516 692 500
+           A 180 24 0 0 0 332 500 Z"
+        fill="url(#wine)"/>
+  <ellipse cx="512" cy="500" rx="180" ry="24" fill="url(#wineSurface)"/>
+  <ellipse cx="512" cy="500" rx="180" ry="24" fill="none" stroke="#E8B7C9" stroke-opacity="0.35" stroke-width="3"/>
+
+  <!-- Bowl: straight taper from narrow rim to a crisp angular shoulder,
+       then a straight cone converging on the stem (Zalto Universal) -->
+  <path d="M 384 236
+           L 330 492
+           Q 325 515 342 530
+           L 480 634
+           Q 500 649 512 650
+           M 640 236
+           L 694 492
+           Q 699 515 682 530
+           L 544 634
+           Q 524 649 512 650"
+        fill="none" stroke="url(#gold)" stroke-width="11" stroke-linecap="round"/>
+
+  <!-- Rim -->
+  <ellipse cx="512" cy="236" rx="128" ry="16" fill="none" stroke="url(#gold)" stroke-width="8" stroke-opacity="0.95"/>
+
+  <!-- Glass reflection on the upper right wall -->
+  <path d="M 630 296 L 664 452"
+        fill="none" stroke="#F5E3B3" stroke-opacity="0.3" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- Stem: razor thin, slight taper -->
+  <path d="M 507 652 L 505 878 L 519 878 L 517 652 Z" fill="url(#gold)"/>
+
+  <!-- Foot -->
+  <ellipse cx="512" cy="888" rx="155" ry="20" fill="#F0D79A" fill-opacity="0.06"
+           stroke="url(#gold)" stroke-width="10"/>
+</svg>

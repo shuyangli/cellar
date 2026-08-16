@@ -12,12 +12,15 @@ server, overridable in the app's Settings (gear icon on the Cellar tab — use
   automatically, no pbxproj edits needed.
 - `Info.plist` — ATS exception (`NSAllowsArbitraryLoads`) because the tailnet
   origin is plain HTTP; WireGuard already encrypts the transport.
+- `AppIcon.svg` — icon source (Zalto-style glass, gold on aubergine). To
+  change the icon, edit the SVG and re-render the asset:
+  `rsvg-convert -w 1024 -h 1024 AppIcon.svg -o WineCellar/Assets.xcassets/AppIcon.appiconset/AppIcon.png`.
 - `WineCellar/` — all sources:
   - `Models.swift`, `CellarAPI.swift` — Codable models + URLSession client for
     the full API surface (cellar, wines, tastings, purchases, inventory
     events, wishlist, ordered wines, stats, drink-now, history, users).
-  - `Components.swift` — wine-type glass icon (liquid color per type),
-    rating badges (`93S`, tap to expand the reviewer name), drinking-window
+  - `Components.swift` — wine-type glass icons (liquid color per type,
+    champagne flute for sparkling), rating badges (`93S`), drinking-window
     coloring, inventory delta badges, formatters.
   - `Theme.swift` — adaptive palette (warm parchment in light mode; the web
     UI's plum-black with crimson corner glows in dark), serif navigation
