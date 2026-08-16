@@ -175,25 +175,25 @@ struct CellarListView: View {
 
     private var filterSection: some View {
         Section {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    chip("all types", active: model.wineType == nil) {
-                        model.wineType = nil
-                        Task { await model.load() }
-                    }
-                    ForEach(WineType.allCases) { type in
-                        chip(type.label, active: model.wineType == type.rawValue) {
-                            model.wineType = model.wineType == type.rawValue ? nil : type.rawValue
-                            Task { await model.load() }
-                        }
-                    }
-                    chip(model.showAll ? "showing all" : "in stock", active: model.showAll) {
-                        model.showAll.toggle()
+            // All chips wrap onto as many rows as needed (like the web app);
+            // a horizontal scroller here hid half the filters.
+            FlowLayout(spacing: 6) {
+                chip("all types", active: model.wineType == nil) {
+                    model.wineType = nil
+                    Task { await model.load() }
+                }
+                ForEach(WineType.allCases) { type in
+                    chip(type.label, active: model.wineType == type.rawValue) {
+                        model.wineType = model.wineType == type.rawValue ? nil : type.rawValue
                         Task { await model.load() }
                     }
                 }
+                chip(model.showAll ? "showing all" : "in stock", active: model.showAll) {
+                    model.showAll.toggle()
+                    Task { await model.load() }
+                }
             }
-            .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+            .listRowInsets(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
             .listRowBackground(Color.appCard)
         }
     }
