@@ -1,7 +1,69 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="15" fill="#6c3040"/>
-  <path d="M17 13h30l-2.2 15.2C43.8 36 38.8 41 32 41s-11.8-5-12.8-12.8L17 13Z" fill="#fffaf5" fill-opacity=".12" stroke="#fffaf5" stroke-width="4" stroke-linejoin="round"/>
-  <path d="M20 25h24l-.5 3.4C42.7 34.7 38.6 38 32 38s-10.7-3.3-11.5-9.6L20 25Z" fill="#d9b36c"/>
-  <path d="M32 41v11M24 56h16" fill="none" stroke="#fffaf5" stroke-width="4" stroke-linecap="round"/>
-  <circle cx="39.5" cy="19" r="2" fill="#fffaf5" fill-opacity=".9"/>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- KEEP IN SYNC: this is the favicon rendition of the shared app icon
+       (source of truth: ios/AppIcon.svg). Same art, with rounded corners
+       baked in and ~3x stroke weights so it stays legible at 16-32px.
+       If the app icon changes, update this file and re-render the PNG/ICO
+       assets — see "App icon" in ios/README.md. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#331021"/>
+      <stop offset="0.55" stop-color="#1C0913"/>
+      <stop offset="1" stop-color="#0E040A"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.42" r="0.55">
+      <stop offset="0" stop-color="#8C2349" stop-opacity="0.5"/>
+      <stop offset="0.6" stop-color="#8C2349" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#8C2349" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0.2" x2="0" y2="1">
+      <stop offset="0" stop-color="#F0D79A"/>
+      <stop offset="1" stop-color="#C0913F"/>
+    </linearGradient>
+    <linearGradient id="wine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#A62D55"/>
+      <stop offset="1" stop-color="#470D20"/>
+    </linearGradient>
+    <linearGradient id="wineSurface" x1="0" y1="0" x2="1" y2="0.4">
+      <stop offset="0" stop-color="#D06287"/>
+      <stop offset="0.5" stop-color="#A62D55"/>
+      <stop offset="1" stop-color="#7C1B3D"/>
+    </linearGradient>
+    <clipPath id="squircle">
+      <rect width="1024" height="1024" rx="224"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+    <rect width="1024" height="1024" fill="url(#glow)"/>
+  </g>
+
+  <!-- Wine -->
+  <path d="M 330 505
+           C 340 560 430 640 512 649
+           C 594 640 664 560 694 505
+           A 182 26 0 0 0 330 505 Z"
+        fill="url(#wine)"/>
+  <ellipse cx="512" cy="505" rx="182" ry="26" fill="url(#wineSurface)"/>
+
+  <!-- Bowl (Zalto Universal silhouette) -->
+  <path d="M 384 236
+           L 330 492
+           Q 325 515 342 530
+           L 480 634
+           Q 500 649 512 650
+           M 640 236
+           L 694 492
+           Q 699 515 682 530
+           L 544 634
+           Q 524 649 512 650"
+        fill="none" stroke="url(#gold)" stroke-width="30" stroke-linecap="round"/>
+
+  <!-- Rim -->
+  <ellipse cx="512" cy="236" rx="128" ry="16" fill="none" stroke="url(#gold)" stroke-width="20" stroke-opacity="0.95"/>
+
+  <!-- Stem and foot -->
+  <path d="M 500 652 L 498 878 L 526 878 L 524 652 Z" fill="url(#gold)"/>
+  <ellipse cx="512" cy="888" rx="155" ry="20" fill="#F0D79A" fill-opacity="0.06"
+           stroke="url(#gold)" stroke-width="26"/>
 </svg>

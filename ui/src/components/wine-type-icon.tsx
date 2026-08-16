@@ -31,8 +31,13 @@ const FALLBACK_STYLE: IconStyle = {
   color: '#a1a1aa',
 }
 
+// KEEP IN SYNC: the iOS app draws the same glasses in
+// ios/WineCellar/Components.swift (WineTypeIcon and its shapes, same 32x40
+// design space). Any change to these silhouettes, fill lines, or bubbles
+// should be mirrored there in the same change.
 const BOWL_PATH = 'M8 4h16l-1.1 10.4A7 7 0 0 1 16 20.7a7 7 0 0 1-6.9-6.3L8 4Z'
-const FLUTE_PATH = 'M12.3 4h7.4l-.5 14.5a3.2 3.2 0 0 1-6.4 0Z'
+const FLUTE_PATH =
+  'M13 4h6c.7 2.3 1.8 5 1.8 8.6 0 4.4-2 7.8-4.8 8.8-2.8-1-4.8-4.4-4.8-8.8 0-3.6 1.1-6.3 1.8-8.6Z'
 
 /**
  * A compact wine-glass marker: liquid color shows the style; sparkling wine
@@ -61,12 +66,12 @@ export function WineTypeIcon({ wineType, className = '' }: WineTypeIconProps) {
             </clipPath>
           </defs>
           <g clipPath={`url(#${clipId})`} aria-hidden="true">
-            <rect x="11" y="8.5" width="10" height="14" fill={style.color} opacity="0.92" />
+            <rect x="10.5" y="8.5" width="11" height="14" fill={style.color} opacity="0.92" />
             <g fill="#fff7cc" opacity="0.95">
-              <circle cx="15.3" cy="11" r="0.62" />
-              <circle cx="16.9" cy="13.2" r="0.52" />
-              <circle cx="15.5" cy="15.6" r="0.5" />
-              <circle cx="16.5" cy="18.2" r="0.45" />
+              <circle cx="15.4" cy="11" r="0.6" />
+              <circle cx="16.9" cy="13.4" r="0.52" />
+              <circle cx="15.5" cy="16" r="0.5" />
+              <circle cx="16.4" cy="18.6" r="0.42" />
             </g>
           </g>
           <path
@@ -77,7 +82,7 @@ export function WineTypeIcon({ wineType, className = '' }: WineTypeIconProps) {
             strokeLinejoin="round"
           />
           <path
-            d="M16 21.7v14.3M11.5 36h9"
+            d="M16 21.4v14.6M11.5 36h9"
             fill="none"
             stroke="currentColor"
             strokeWidth="1.7"
