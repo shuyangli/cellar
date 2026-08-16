@@ -29,7 +29,8 @@ extension Color {
 
 // MARK: - Wine type icon
 
-/// Vector wine glass whose liquid color encodes the wine type; sparkling adds bubbles.
+/// Vector glass whose liquid color encodes the wine type; sparkling pours
+/// into a champagne flute with rising bubbles.
 struct WineTypeIcon: View {
     var wineType: String?
     var size: CGFloat = 28
@@ -37,13 +38,20 @@ struct WineTypeIcon: View {
     var body: some View {
         let fill = Color.wineFill(wineType)
         ZStack {
-            GlassBowlShape()
-                .fill(fill.opacity(0.92))
-            GlassOutlineShape()
-                .stroke(Color.secondary.opacity(0.75), lineWidth: 1.6)
             if wineType == "sparkling" {
-                BubblesShape()
+                FluteFizzShape()
+                    .fill(fill.opacity(0.8))
+                FluteLiquidShape()
+                    .fill(fill.opacity(0.92))
+                FluteOutlineShape()
+                    .stroke(Color.secondary.opacity(0.75), lineWidth: 1.6)
+                FluteBubblesShape()
                     .fill(Color(hex: 0xFFF7CC).opacity(0.95))
+            } else {
+                GlassBowlShape()
+                    .fill(fill.opacity(0.92))
+                GlassOutlineShape()
+                    .stroke(Color.secondary.opacity(0.75), lineWidth: 1.6)
             }
         }
         .frame(width: size * 0.8, height: size)
@@ -102,11 +110,70 @@ private struct GlassOutlineShape: Shape {
     }
 }
 
-private struct BubblesShape: Shape {
+/// Champagne flute: narrow rim, near-vertical sides, rounded base.
+private struct FluteOutlineShape: Shape {
     func path(in rect: CGRect) -> Path {
         let sx = rect.width / 32, sy = rect.height / 40
         var path = Path()
-        for (x, y, r) in [(13.0, 16.0, 0.9), (18.0, 14.5, 0.75), (15.5, 19.0, 0.6)] {
+        // Bowl
+        path.move(to: CGPoint(x: 12.3 * sx, y: 4 * sy))
+        path.addLine(to: CGPoint(x: 19.7 * sx, y: 4 * sy))
+        path.addLine(to: CGPoint(x: 19.2 * sx, y: 18.5 * sy))
+        path.addCurve(
+            to: CGPoint(x: 12.8 * sx, y: 18.5 * sy),
+            control1: CGPoint(x: 19.2 * sx, y: 22.5 * sy),
+            control2: CGPoint(x: 12.8 * sx, y: 22.5 * sy)
+        )
+        path.closeSubpath()
+        // Stem
+        path.move(to: CGPoint(x: 16 * sx, y: 21.5 * sy))
+        path.addLine(to: CGPoint(x: 16 * sx, y: 34 * sy))
+        // Foot
+        path.move(to: CGPoint(x: 9 * sx, y: 36 * sy))
+        path.addLine(to: CGPoint(x: 23 * sx, y: 36 * sy))
+        return path
+    }
+}
+
+/// The champagne inside the flute, filled nearly to the rim.
+private struct FluteLiquidShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let sx = rect.width / 32, sy = rect.height / 40
+        var path = Path()
+        path.move(to: CGPoint(x: 12.98 * sx, y: 9 * sy))
+        path.addLine(to: CGPoint(x: 19.02 * sx, y: 9 * sy))
+        path.addLine(to: CGPoint(x: 18.7 * sx, y: 18.2 * sy))
+        path.addCurve(
+            to: CGPoint(x: 13.3 * sx, y: 18.2 * sy),
+            control1: CGPoint(x: 18.7 * sx, y: 21.6 * sy),
+            control2: CGPoint(x: 13.3 * sx, y: 21.6 * sy)
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// Pale bubbles rising up the middle of the flute.
+private struct FluteBubblesShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let sx = rect.width / 32, sy = rect.height / 40
+        var path = Path()
+        for (x, y, r) in [(15.4, 12.0, 0.6), (16.8, 14.8, 0.5), (15.8, 17.4, 0.45)] {
+            path.addEllipse(in: CGRect(
+                x: (x - r) * sx, y: (y - r) * sy,
+                width: 2 * r * sx, height: 2 * r * sy
+            ))
+        }
+        return path
+    }
+}
+
+/// Fizz escaping past the rim.
+private struct FluteFizzShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let sx = rect.width / 32, sy = rect.height / 40
+        var path = Path()
+        for (x, y, r) in [(10.4, 6.8, 1.05), (21.6, 8.2, 0.8)] {
             path.addEllipse(in: CGRect(
                 x: (x - r) * sx, y: (y - r) * sy,
                 width: 2 * r * sx, height: 2 * r * sy
@@ -363,6 +430,16 @@ enum Format {
         guard let date = parser.date(from: iso) else { return iso }
         let printer = DateFormatter()
         printer.dateFormat = "MMM d"
+        printer.locale = Locale(identifier: "en_US")
+        return printer.string(from: date)
+    }
+
+    /// `Mar 14, 2026` from `YYYY-MM-DD`; falls back to the raw string.
+    static func longDate(_ iso: String?) -> String? {
+        guard let iso, !iso.isEmpty else { return nil }
+        guard let date = parseISODate(iso) else { return iso }
+        let printer = DateFormatter()
+        printer.dateFormat = "MMM d, yyyy"
         printer.locale = Locale(identifier: "en_US")
         return printer.string(from: date)
     }
