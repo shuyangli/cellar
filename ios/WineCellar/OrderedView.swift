@@ -16,6 +16,7 @@ struct OrderedListView: View {
                             Task { await load() }
                         }
                 }
+                .listRowBackground(Color.appCard)
                 Section {
                     if orders.isEmpty {
                         ContentUnavailableView(
@@ -39,8 +40,10 @@ struct OrderedListView: View {
                         Text("\(bottles) bottle\(bottles == 1 ? "" : "s") across \(active.count) order line\(active.count == 1 ? "" : "s")")
                     }
                 }
+                .listRowBackground(Color.appCard)
             }
             .listStyle(.insetGrouped)
+            .cellarBackground()
             .refreshable { await load() }
         }
         .task { if orders == nil { await load() } }

@@ -2,9 +2,16 @@ import SwiftUI
 
 @main
 struct WineCellarApp: App {
+    @AppStorage(Appearance.storageKey) private var appearanceRaw = Appearance.system.rawValue
+
+    init() {
+        ThemeSetup.configure()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootTabView()
+                .preferredColorScheme((Appearance(rawValue: appearanceRaw) ?? .system).colorScheme)
         }
     }
 }
@@ -54,6 +61,7 @@ struct ShoppingView: View {
                         .accessibilityHidden(section != 1)
                 }
             }
+            .background(CellarBackground())
             .navigationTitle(section == 0 ? "Ordered" : "Wishlist")
             .toolbar {
                 if section == 1 {
