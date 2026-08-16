@@ -61,12 +61,13 @@ function RootLayout() {
   return (
     <div className="relative isolate min-h-screen text-foreground">
       <div className="cellar-atmosphere" aria-hidden="true">
-        <span className="cellar-bubble" />
-        <span className="cellar-bubble" />
-        <span className="cellar-bubble" />
-        <span className="cellar-bubble" />
+        <span className="cellar-glow cellar-glow--primary" />
+        <span className="cellar-glow cellar-glow--secondary" />
+        <span className="cellar-orbit cellar-orbit--one" />
+        <span className="cellar-orbit cellar-orbit--two" />
+        <span className="cellar-scan" />
       </div>
-      <header className="sticky top-0 z-10 border-b border-white/45 bg-[linear-gradient(100deg,rgb(253_249_241/0.9),rgb(247_238_230/0.84),rgb(246_234_235/0.86))] shadow-[0_1px_18px_rgb(67_53_38/0.055)] backdrop-blur-xl">
+      <header className="cellar-header sticky top-0 z-10">
         <CellarNavigation />
       </header>
       <Outlet />

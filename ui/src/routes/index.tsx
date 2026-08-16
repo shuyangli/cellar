@@ -114,10 +114,10 @@ function Hero({ summary }: { summary: CellarPayload['summary'] }) {
   return (
     <div className="flex flex-col gap-7 md:flex-row md:items-end md:justify-between">
       <div>
-        <p className="cellar-kicker text-[0.68rem] font-semibold text-primary/75 uppercase">
+        <p className="cellar-kicker text-[0.68rem] font-semibold text-[#d66e96] uppercase">
           Private cellar view
         </p>
-        <h1 className="font-heading mt-1.5 bg-[linear-gradient(115deg,#302920_10%,#71384a_72%,#9a634e)] bg-clip-text text-5xl font-medium tracking-[-0.025em] text-transparent md:text-6xl">
+        <h1 className="font-heading mt-1.5 bg-[linear-gradient(110deg,#f8f4f6_8%,#e9c3d0_52%,#be4a75)] bg-clip-text text-5xl font-medium tracking-[-0.025em] text-transparent md:text-6xl">
           Cellar
         </h1>
         <p className="mt-1.5 text-sm text-muted-foreground">
@@ -129,7 +129,7 @@ function Hero({ summary }: { summary: CellarPayload['summary'] }) {
           <Card
             key={stat.label}
             size="sm"
-            className="min-w-[7.5rem] bg-card/72 transition-[transform,box-shadow] duration-300 hover:-translate-y-1 hover:shadow-[0_16px_38px_rgb(77_52_34/0.1)]"
+            className="min-w-[7.5rem] bg-card/72 transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-1 hover:border-primary/30 hover:shadow-[0_18px_44px_rgb(88_17_50/0.22)]"
           >
             <CardContent className="flex flex-col gap-0.5">
               <span className="font-heading text-2xl font-medium tracking-[-0.01em] tabular-nums">
@@ -166,7 +166,7 @@ function FilterBar({ search }: { search: CellarSearch }) {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/75 bg-card/55 p-2.5 shadow-[0_4px_20px_rgb(63_52_40/0.035)] backdrop-blur-sm">
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/[0.07] bg-card/55 p-2.5 shadow-[0_12px_36px_rgb(0_0_0/0.16)] backdrop-blur-xl">
       <form
         className="flex min-w-0 flex-1 items-center gap-2"
         onSubmit={(event) => {
