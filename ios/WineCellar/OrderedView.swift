@@ -43,7 +43,6 @@ struct OrderedListView: View {
             .listStyle(.insetGrouped)
             .refreshable { await load() }
         }
-        .navigationTitle("Ordered")
         .task { if orders == nil { await load() } }
     }
 

@@ -1,11 +1,12 @@
 import SwiftUI
 
 struct WishlistListView: View {
+    @Binding var showAddForm: Bool
+
     @State private var entries: [WishlistEntry]?
     @State private var error: String?
     @State private var pendingIds: Set<Int> = []
     @State private var rowErrors: [Int: String] = [:]
-    @State private var showAddForm = false
 
     var body: some View {
         AsyncContent(value: entries, error: error, retry: { Task { await load() } }) { entries in
@@ -28,16 +29,6 @@ struct WishlistListView: View {
             }
             .listStyle(.insetGrouped)
             .refreshable { await load() }
-        }
-        .navigationTitle("Wishlist")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showAddForm = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-            }
         }
         .sheet(isPresented: $showAddForm) {
             WishlistForm { Task { await load() } }
