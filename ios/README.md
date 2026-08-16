@@ -38,3 +38,29 @@ xcodebuild -project ios/WineCellar.xcodeproj -scheme WineCellar \
 ```
 
 On a real phone, install the Tailscale app so `claw` resolves via MagicDNS.
+
+## Release (TestFlight)
+
+The app ships to phones through TestFlight as **Cellar Browser**
+(team `RM2BB7S3BX`, bundle `li.shuyang.cellar`). Signing and upload are fully
+headless via an App Store Connect API key at
+`~/.appstoreconnect/private_keys/AuthKey_9277CZY57L.p8`
+(key ID `9277CZY57L`, issuer `69a6de7f-99c8-47e3-e053-5b8c7c11a4d1`):
+
+```bash
+AUTH=(-allowProvisioningUpdates
+      -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_9277CZY57L.p8
+      -authenticationKeyID 9277CZY57L
+      -authenticationKeyIssuerID 69a6de7f-99c8-47e3-e053-5b8c7c11a4d1)
+xcodebuild -project ios/WineCellar.xcodeproj -scheme WineCellar \
+  -configuration Release -destination 'generic/platform=iOS' \
+  -archivePath /tmp/WineCellar.xcarchive "${AUTH[@]}" archive
+xcodebuild -exportArchive -archivePath /tmp/WineCellar.xcarchive \
+  -exportPath /tmp/WineCellar-export \
+  -exportOptionsPlist ios/ExportOptions.plist "${AUTH[@]}"
+xcrun altool --upload-app -f /tmp/WineCellar-export/WineCellar.ipa -t ios \
+  --apiKey 9277CZY57L --apiIssuer 69a6de7f-99c8-47e3-e053-5b8c7c11a4d1
+```
+
+Bump `CURRENT_PROJECT_VERSION` before each upload — App Store Connect rejects
+duplicate build numbers for the same version.
