@@ -115,12 +115,7 @@ struct WineDetailView: View {
                     }
                     ForEach(wine.ratings ?? []) { entry in
                         if let rating = entry.rating {
-                            RatingBadge(
-                                rating: rating,
-                                initials: entry.initials,
-                                name: entry.userName,
-                                tastings: entry.tastings
-                            )
+                            RatingBadge(rating: rating, initials: entry.initials)
                         }
                     }
                     if (wine.ratings?.count ?? 0) > 1, let avg = wine.avgRating {
@@ -421,11 +416,7 @@ struct TastingRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 if let rating = tasting.rating {
-                    RatingBadge(
-                        rating: Double(rating),
-                        initials: tasting.userInitials,
-                        name: tasting.userName
-                    )
+                    RatingBadge(rating: Double(rating), initials: tasting.userInitials)
                 }
                 Text(tasting.userName ?? "Unknown")
                     .font(.subheadline.weight(.medium))

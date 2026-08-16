@@ -121,11 +121,7 @@ struct HistoryRowView: View {
         let rated = entry.reviews.filter { $0.rating != nil }
         if let first = rated.first, let rating = first.rating {
             HStack(spacing: 3) {
-                RatingBadge(
-                    rating: Double(rating),
-                    initials: first.userInitials,
-                    name: first.userName
-                )
+                RatingBadge(rating: Double(rating), initials: first.userInitials)
                 if rated.count > 1 {
                     Text("+\(rated.count - 1)")
                         .font(.caption2)
@@ -233,11 +229,7 @@ struct HistoryReviewBlock: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 if let rating = review.rating {
-                    RatingBadge(
-                        rating: Double(rating),
-                        initials: review.userInitials,
-                        name: review.userName
-                    )
+                    RatingBadge(rating: Double(rating), initials: review.userInitials)
                 }
                 Text(review.userName ?? "Unassigned reviewer")
                     .font(.caption.weight(.medium))

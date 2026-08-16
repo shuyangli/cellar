@@ -118,14 +118,10 @@ private struct BubblesShape: Shape {
 
 // MARK: - Rating badges
 
-/// `93S` pill; tapping toggles the initial to the reviewer's full name.
+/// `93S` pill — the rating followed by the reviewer's initial.
 struct RatingBadge: View {
     var rating: Double
     var initials: String?
-    var name: String?
-    var tastings: Int?
-
-    @State private var showName = false
 
     private var ratingText: String {
         rating.truncatingRemainder(dividingBy: 1) == 0
@@ -134,25 +130,20 @@ struct RatingBadge: View {
     }
 
     var body: some View {
-        Button {
-            if name != nil, initials != nil { showName.toggle() }
-        } label: {
-            HStack(spacing: 1) {
-                Text(ratingText)
-                    .fontWeight(.semibold)
-                    .monospacedDigit()
-                if let suffix = showName ? name : initials {
-                    Text(suffix).opacity(0.8)
-                }
+        HStack(spacing: 1) {
+            Text(ratingText)
+                .fontWeight(.semibold)
+                .monospacedDigit()
+            if let initials {
+                Text(initials).opacity(0.8)
             }
-            .font(.caption2)
-            .fixedSize()
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(Color.burgundyGradient, in: Capsule())
-            .foregroundStyle(.white)
         }
-        .buttonStyle(.plain)
+        .font(.caption2)
+        .fixedSize()
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Color.burgundyGradient, in: Capsule())
+        .foregroundStyle(.white)
     }
 }
 
@@ -164,12 +155,7 @@ struct RatingBadges: View {
             HStack(spacing: 4) {
                 ForEach(ratings) { entry in
                     if let rating = entry.rating {
-                        RatingBadge(
-                            rating: rating,
-                            initials: entry.initials,
-                            name: entry.userName,
-                            tastings: entry.tastings
-                        )
+                        RatingBadge(rating: rating, initials: entry.initials)
                     }
                 }
             }

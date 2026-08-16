@@ -149,7 +149,7 @@ struct StatsView: View {
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                             if let rating = wine.avgRating {
-                                RatingBadge(rating: rating, initials: nil, name: nil)
+                                RatingBadge(rating: rating, initials: nil)
                             }
                         }
                     }
@@ -189,11 +189,7 @@ struct StatsView: View {
                             }
                             Spacer()
                             if let rating = tasting.rating {
-                                RatingBadge(
-                                    rating: Double(rating),
-                                    initials: tasting.userInitials,
-                                    name: tasting.userName
-                                )
+                                RatingBadge(rating: Double(rating), initials: tasting.userInitials)
                             }
                         }
                     }
