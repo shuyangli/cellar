@@ -13,9 +13,9 @@ const NAV_LINKS = [
 ] as const
 
 const NAV_LINK_CLASS =
-  'rounded-full px-3 py-1.5 text-sm whitespace-nowrap text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground'
+  'rounded-full px-3 py-1.5 text-sm whitespace-nowrap text-muted-foreground transition-all duration-200 hover:bg-white/[0.045] hover:text-foreground'
 const ACTIVE_NAV_LINK_CLASS =
-  'rounded-full px-3 py-1.5 text-sm whitespace-nowrap bg-secondary font-medium text-foreground shadow-[inset_0_0_0_1px_rgb(99_50_60/0.07)]'
+  'rounded-full px-3 py-1.5 text-sm whitespace-nowrap bg-primary font-medium text-primary-foreground shadow-[0_6px_18px_rgb(121_25_60/0.28),inset_0_1px_rgb(255_255_255/0.12)]'
 
 const subscribeToHydration = () => () => undefined
 const hydratedSnapshot = () => true
@@ -64,11 +64,9 @@ export function CellarNavigation() {
   })
 
   return (
-    <nav className="mx-auto flex max-w-6xl items-center gap-1 overflow-x-auto px-4 py-2.5 sm:px-6">
-      <span className="font-heading mr-4 hidden items-center gap-2 text-lg font-semibold tracking-[0.01em] sm:flex">
-        <span className="flex size-7 items-center justify-center rounded-full bg-[linear-gradient(145deg,#814559,#552534)] text-[13px] text-primary-foreground shadow-[0_4px_13px_rgb(108_48_64/0.24),inset_0_1px_rgb(255_255_255/0.24)]">
-          C
-        </span>
+    <nav className="cellar-navigation mx-auto flex max-w-6xl items-center gap-1 overflow-x-auto px-4 py-2.5 sm:px-6">
+      <span className="font-heading mr-4 hidden items-center gap-2 text-lg font-semibold tracking-[0.01em] text-foreground sm:flex">
+        <span className="cellar-monogram">C</span>
         Cellar
       </span>
       {NAV_LINKS.map((link) => {
