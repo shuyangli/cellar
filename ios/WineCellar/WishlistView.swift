@@ -25,9 +25,11 @@ struct WishlistListView: View {
                         error: rowErrors[entry.id],
                         remove: { Task { await remove(entry) } }
                     )
+                    .listRowBackground(Color.appCard)
                 }
             }
             .listStyle(.insetGrouped)
+            .cellarBackground()
             .refreshable { await load() }
         }
         .sheet(isPresented: $showAddForm) {

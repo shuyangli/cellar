@@ -28,6 +28,7 @@ struct WineDetailView: View {
                 eventsSection(wine)
             }
             .listStyle(.insetGrouped)
+            .cellarBackground()
             .refreshable { await load() }
         }
         .navigationTitle(wine?.producer ?? "Wine")
@@ -122,6 +123,7 @@ struct WineDetailView: View {
                     .foregroundStyle(.red)
             }
         }
+        .listRowBackground(Color.appCard)
     }
 
     private func actionsSection(_ wine: Wine) -> some View {
@@ -172,6 +174,7 @@ struct WineDetailView: View {
                 Label("Delete wine", systemImage: "trash")
             }
         }
+        .listRowBackground(Color.appCard)
     }
 
     @ViewBuilder
@@ -196,6 +199,7 @@ struct WineDetailView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .listRowBackground(Color.appCard)
     }
 
     @ViewBuilder
@@ -219,6 +223,7 @@ struct WineDetailView: View {
                     }
                 }
                 .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+                .listRowBackground(Color.appCard)
             }
         }
     }
@@ -244,6 +249,7 @@ struct WineDetailView: View {
                 Text("\(count) tasting\(count == 1 ? "" : "s") logged")
             }
         }
+        .listRowBackground(Color.appCard)
     }
 
     @ViewBuilder
@@ -261,6 +267,7 @@ struct WineDetailView: View {
                 }
             }
         }
+        .listRowBackground(Color.appCard)
     }
 
     @ViewBuilder
@@ -280,6 +287,7 @@ struct WineDetailView: View {
                     }
                 }
             }
+            .listRowBackground(Color.appCard)
         }
     }
 

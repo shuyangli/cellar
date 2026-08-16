@@ -29,6 +29,7 @@ struct StatsView: View {
                     recentTastingsSection(stats)
                 }
                 .listStyle(.insetGrouped)
+                .cellarBackground()
                 .refreshable { await load() }
             }
             .navigationTitle("Stats")
@@ -61,13 +62,16 @@ struct StatsView: View {
             }
             .listRowInsets(EdgeInsets(top: 12, leading: 8, bottom: 12, trailing: 8))
         }
+        .listRowBackground(Color.appCard)
     }
 
     private func stat(_ value: String, _ label: String) -> some View {
         VStack(spacing: 2) {
             Text(value)
-                .font(.title3.weight(.semibold))
+                .font(.title2.weight(.semibold))
+                .fontDesign(.serif)
                 .monospacedDigit()
+                .foregroundStyle(Color.appBurgundy)
             Text(label)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -95,6 +99,7 @@ struct StatsView: View {
                 }
             }
         }
+        .listRowBackground(Color.appCard)
     }
 
     @ViewBuilder
@@ -118,6 +123,7 @@ struct StatsView: View {
         } footer: {
             Text("Last 12 months with purchases.")
         }
+        .listRowBackground(Color.appCard)
     }
 
     @ViewBuilder
@@ -154,12 +160,18 @@ struct StatsView: View {
         } footer: {
             Text("Average across all reviewers.")
         }
+        .listRowBackground(Color.appCard)
     }
 
     @ViewBuilder
     private func recentTastingsSection(_ stats: StatsPayload) -> some View {
         if !stats.recentTastings.isEmpty {
-            Section("Recent tastings") {
+            recentSection(stats)
+        }
+    }
+
+    private func recentSection(_ stats: StatsPayload) -> some View {
+        Section("Recent tastings") {
                 ForEach(stats.recentTastings) { tasting in
                     NavigationLink(value: tasting.wineId) {
                         HStack(spacing: 8) {
@@ -186,8 +198,8 @@ struct StatsView: View {
                         }
                     }
                 }
-            }
         }
+        .listRowBackground(Color.appCard)
     }
 }
 
