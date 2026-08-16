@@ -12,12 +12,23 @@ server, overridable in the app's Settings (gear icon on the Cellar tab — use
   automatically, no pbxproj edits needed.
 - `Info.plist` — ATS exception (`NSAllowsArbitraryLoads`) because the tailnet
   origin is plain HTTP; WireGuard already encrypts the transport.
+- `AppIcon.svg` — icon source (Zalto-style glass, gold on aubergine), shared
+  with the web app's favicon and PWA icons. To change the icon, edit this SVG
+  plus its favicon rendition `ui/public/favicon.svg` (same art, rounded
+  corners, thicker strokes), then re-render every derived asset:
+  ```
+  rsvg-convert -w 1024 -h 1024 ios/AppIcon.svg -o ios/WineCellar/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+  rsvg-convert -w 180 -h 180 ios/AppIcon.svg -o ui/public/apple-touch-icon.png
+  rsvg-convert -w 192 -h 192 ios/AppIcon.svg -o ui/public/logo192.png
+  rsvg-convert -w 512 -h 512 ios/AppIcon.svg -o ui/public/logo512.png
+  # favicon.ico: render favicon.svg at 48/32/16 and bundle (Pillow: Image.save with append_images/sizes)
+  ```
 - `WineCellar/` — all sources:
   - `Models.swift`, `CellarAPI.swift` — Codable models + URLSession client for
     the full API surface (cellar, wines, tastings, purchases, inventory
     events, wishlist, ordered wines, stats, drink-now, history, users).
-  - `Components.swift` — wine-type glass icon (liquid color per type),
-    rating badges (`93S`, tap to expand the reviewer name), drinking-window
+  - `Components.swift` — wine-type glass icons (liquid color per type,
+    champagne flute for sparkling), rating badges (`93S`), drinking-window
     coloring, inventory delta badges, formatters.
   - `Theme.swift` — adaptive palette (warm parchment in light mode; the web
     UI's plum-black with crimson corner glows in dark), serif navigation

@@ -175,25 +175,27 @@ struct CellarListView: View {
 
     private var filterSection: some View {
         Section {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    chip("all types", active: model.wineType == nil) {
-                        model.wineType = nil
-                        Task { await model.load() }
-                    }
-                    ForEach(WineType.allCases) { type in
-                        chip(type.label, active: model.wineType == type.rawValue) {
-                            model.wineType = model.wineType == type.rawValue ? nil : type.rawValue
-                            Task { await model.load() }
-                        }
-                    }
-                    chip(model.showAll ? "showing all" : "in stock", active: model.showAll) {
-                        model.showAll.toggle()
+            // All chips wrap onto as many rows as needed (like the web app);
+            // a horizontal scroller here hid half the filters.
+            FlowLayout(spacing: 6) {
+                chip("all types", active: model.wineType == nil) {
+                    model.wineType = nil
+                    Task { await model.load() }
+                }
+                ForEach(WineType.allCases) { type in
+                    chip(type.label, active: model.wineType == type.rawValue) {
+                        model.wineType = model.wineType == type.rawValue ? nil : type.rawValue
                         Task { await model.load() }
                     }
                 }
+                // Stable label (filled = filter on) — a self-renaming chip
+                // reads as appearing/disappearing and shifts the layout.
+                chip("in stock only", active: !model.showAll) {
+                    model.showAll.toggle()
+                    Task { await model.load() }
+                }
             }
-            .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+            .listRowInsets(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
             .listRowBackground(Color.appCard)
         }
     }
@@ -202,8 +204,10 @@ struct CellarListView: View {
     private func chip(_ label: String, active: Bool, action: @escaping () -> Void) -> some View {
         let shape = Capsule()
         Button(action: action) {
+            // Constant weight: a weight change on activation resizes the chip
+            // and reflows the whole wrapped row.
             Text(label)
-                .font(.footnote.weight(active ? .medium : .regular))
+                .font(.footnote.weight(.medium))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background {

@@ -29,7 +29,17 @@ extension Color {
 
 // MARK: - Wine type icon
 
-/// Vector wine glass whose liquid color encodes the wine type; sparkling adds bubbles.
+/// Vector glass whose liquid color encodes the wine type; sparkling pours
+/// into a tulip champagne glass with rising bubbles.
+///
+/// The liquid is the bowl silhouette itself clipped at the fill line (and the
+/// bubbles are clipped to the bowl), so contents can never drift outside the
+/// glass at any render size.
+///
+/// KEEP IN SYNC: the web UI draws the same glasses in
+/// ui/src/components/wine-type-icon.tsx (same 32x40 design space). Any change
+/// to the silhouettes, fill lines, or bubbles should be mirrored there in the
+/// same change.
 struct WineTypeIcon: View {
     var wineType: String?
     var size: CGFloat = 28
@@ -37,13 +47,21 @@ struct WineTypeIcon: View {
     var body: some View {
         let fill = Color.wineFill(wineType)
         ZStack {
-            GlassBowlShape()
-                .fill(fill.opacity(0.92))
-            GlassOutlineShape()
-                .stroke(Color.secondary.opacity(0.75), lineWidth: 1.6)
             if wineType == "sparkling" {
-                BubblesShape()
+                FluteBowlShape()
+                    .fill(fill.opacity(0.92))
+                    .clipShape(BandShape(top: 8))
+                FluteBubblesShape()
                     .fill(Color(hex: 0xFFF7CC).opacity(0.95))
+                    .clipShape(FluteBowlShape())
+                FluteOutlineShape()
+                    .stroke(Color.secondary.opacity(0.75), lineWidth: 1.6)
+            } else {
+                GlassBowlShape()
+                    .fill(fill.opacity(0.92))
+                    .clipShape(BandShape(top: 12))
+                GlassOutlineShape()
+                    .stroke(Color.secondary.opacity(0.75), lineWidth: 1.6)
             }
         }
         .frame(width: size * 0.8, height: size)
@@ -51,23 +69,38 @@ struct WineTypeIcon: View {
     }
 }
 
-/// The liquid inside the bowl (drawn in a 32x40 design space).
+/// Horizontal band from a design-space y to the bottom; intersecting a bowl
+/// silhouette with this (via clipShape) yields the liquid.
+private struct BandShape: Shape {
+    var top: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let sy = rect.height / 40
+        return Path(CGRect(
+            x: rect.minX, y: rect.minY + top * sy,
+            width: rect.width, height: max(0, rect.height - top * sy)
+        ))
+    }
+}
+
+/// Full bowl silhouette in the 32x40 design space (shared by the liquid clip
+/// and the outline so they always coincide). Same tapered bowl as the web UI.
 private struct GlassBowlShape: Shape {
     func path(in rect: CGRect) -> Path {
         let sx = rect.width / 32, sy = rect.height / 40
         var path = Path()
-        // Liquid: lower half of the bowl.
-        path.move(to: CGPoint(x: 7 * sx, y: 14 * sy))
-        path.addLine(to: CGPoint(x: 25 * sx, y: 14 * sy))
+        path.move(to: CGPoint(x: 7.4 * sx, y: 4 * sy))
+        path.addLine(to: CGPoint(x: 24.6 * sx, y: 4 * sy))
+        path.addLine(to: CGPoint(x: 23.3 * sx, y: 15.8 * sy))
         path.addCurve(
-            to: CGPoint(x: 16 * sx, y: 24 * sy),
-            control1: CGPoint(x: 25 * sx, y: 20 * sy),
-            control2: CGPoint(x: 21.5 * sx, y: 24 * sy)
+            to: CGPoint(x: 16 * sx, y: 22.8 * sy),
+            control1: CGPoint(x: 22.2 * sx, y: 20.6 * sy),
+            control2: CGPoint(x: 19.8 * sx, y: 22.8 * sy)
         )
         path.addCurve(
-            to: CGPoint(x: 7 * sx, y: 14 * sy),
-            control1: CGPoint(x: 10.5 * sx, y: 24 * sy),
-            control2: CGPoint(x: 7 * sx, y: 20 * sy)
+            to: CGPoint(x: 8.7 * sx, y: 15.8 * sy),
+            control1: CGPoint(x: 12.2 * sx, y: 22.8 * sy),
+            control2: CGPoint(x: 9.8 * sx, y: 20.6 * sy)
         )
         path.closeSubpath()
         return path
@@ -77,36 +110,70 @@ private struct GlassBowlShape: Shape {
 private struct GlassOutlineShape: Shape {
     func path(in rect: CGRect) -> Path {
         let sx = rect.width / 32, sy = rect.height / 40
-        var path = Path()
-        // Bowl
-        path.move(to: CGPoint(x: 6 * sx, y: 6 * sy))
-        path.addLine(to: CGPoint(x: 26 * sx, y: 6 * sy))
-        path.addCurve(
-            to: CGPoint(x: 16 * sx, y: 24.5 * sy),
-            control1: CGPoint(x: 26 * sx, y: 17 * sy),
-            control2: CGPoint(x: 22.5 * sx, y: 24.5 * sy)
-        )
-        path.addCurve(
-            to: CGPoint(x: 6 * sx, y: 6 * sy),
-            control1: CGPoint(x: 9.5 * sx, y: 24.5 * sy),
-            control2: CGPoint(x: 6 * sx, y: 17 * sy)
-        )
-        path.closeSubpath()
-        // Stem
-        path.move(to: CGPoint(x: 16 * sx, y: 24.5 * sy))
-        path.addLine(to: CGPoint(x: 16 * sx, y: 34 * sy))
+        var path = GlassBowlShape().path(in: rect)
+        // Stem, meeting the foot line
+        path.move(to: CGPoint(x: 16 * sx, y: 22.8 * sy))
+        path.addLine(to: CGPoint(x: 16 * sx, y: 36 * sy))
         // Foot
-        path.move(to: CGPoint(x: 9 * sx, y: 36 * sy))
-        path.addLine(to: CGPoint(x: 23 * sx, y: 36 * sy))
+        path.move(to: CGPoint(x: 11.5 * sx, y: 36 * sy))
+        path.addLine(to: CGPoint(x: 20.5 * sx, y: 36 * sy))
         return path
     }
 }
 
-private struct BubblesShape: Shape {
+/// Tulip champagne glass silhouette: narrow rim flaring to a mid-bowl belly,
+/// then closing to a rounded base (shared by the liquid clip and the outline).
+private struct FluteBowlShape: Shape {
     func path(in rect: CGRect) -> Path {
         let sx = rect.width / 32, sy = rect.height / 40
         var path = Path()
-        for (x, y, r) in [(13.0, 16.0, 0.9), (18.0, 14.5, 0.75), (15.5, 19.0, 0.6)] {
+        path.move(to: CGPoint(x: 12.8 * sx, y: 4 * sy))
+        path.addLine(to: CGPoint(x: 19.2 * sx, y: 4 * sy))
+        path.addCurve(
+            to: CGPoint(x: 21.3 * sx, y: 13.2 * sy),
+            control1: CGPoint(x: 20 * sx, y: 6.6 * sy),
+            control2: CGPoint(x: 21.3 * sx, y: 9.4 * sy)
+        )
+        path.addCurve(
+            to: CGPoint(x: 16 * sx, y: 22.7 * sy),
+            control1: CGPoint(x: 21.3 * sx, y: 17.9 * sy),
+            control2: CGPoint(x: 19 * sx, y: 21.6 * sy)
+        )
+        path.addCurve(
+            to: CGPoint(x: 10.7 * sx, y: 13.2 * sy),
+            control1: CGPoint(x: 13 * sx, y: 21.6 * sy),
+            control2: CGPoint(x: 10.7 * sx, y: 17.9 * sy)
+        )
+        path.addCurve(
+            to: CGPoint(x: 12.8 * sx, y: 4 * sy),
+            control1: CGPoint(x: 10.7 * sx, y: 9.4 * sy),
+            control2: CGPoint(x: 12 * sx, y: 6.6 * sy)
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct FluteOutlineShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let sx = rect.width / 32, sy = rect.height / 40
+        var path = FluteBowlShape().path(in: rect)
+        // Stem from the bowl base to the foot line
+        path.move(to: CGPoint(x: 16 * sx, y: 22.7 * sy))
+        path.addLine(to: CGPoint(x: 16 * sx, y: 36 * sy))
+        // Foot
+        path.move(to: CGPoint(x: 11.5 * sx, y: 36 * sy))
+        path.addLine(to: CGPoint(x: 20.5 * sx, y: 36 * sy))
+        return path
+    }
+}
+
+/// Pale bubbles rising up the middle of the pour.
+private struct FluteBubblesShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let sx = rect.width / 32, sy = rect.height / 40
+        var path = Path()
+        for (x, y, r) in [(15.3, 11.0, 0.65), (17.0, 13.6, 0.55), (15.4, 16.4, 0.52), (16.6, 19.2, 0.45)] {
             path.addEllipse(in: CGRect(
                 x: (x - r) * sx, y: (y - r) * sy,
                 width: 2 * r * sx, height: 2 * r * sy
@@ -363,6 +430,16 @@ enum Format {
         guard let date = parser.date(from: iso) else { return iso }
         let printer = DateFormatter()
         printer.dateFormat = "MMM d"
+        printer.locale = Locale(identifier: "en_US")
+        return printer.string(from: date)
+    }
+
+    /// `Mar 14, 2026` from `YYYY-MM-DD`; falls back to the raw string.
+    static func longDate(_ iso: String?) -> String? {
+        guard let iso, !iso.isEmpty else { return nil }
+        guard let date = parseISODate(iso) else { return iso }
+        let printer = DateFormatter()
+        printer.dateFormat = "MMM d, yyyy"
         printer.locale = Locale(identifier: "en_US")
         return printer.string(from: date)
     }
