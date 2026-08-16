@@ -84,37 +84,48 @@ struct WineDetailView: View {
 
     private func headerSection(_ wine: Wine) -> some View {
         Section {
-            HStack(alignment: .top, spacing: 12) {
-                WineTypeIcon(wineType: wine.wineType, size: 48)
-                    .padding(8)
-                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(wine.producer)
-                        .font(.title3.weight(.semibold))
-                    Text([wine.wineName, wine.vintage].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · "))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    HStack(spacing: 4) {
-                        if let type = wine.wineType, !type.isEmpty {
-                            TextBadge(text: type, variant: .outline)
-                        }
-                        if let varietal = wine.varietal, !varietal.isEmpty {
-                            TextBadge(text: varietal, variant: .secondary)
-                        }
-                        RatingBadges(ratings: wine.ratings ?? [])
-                        if (wine.ratings?.count ?? 0) > 1, let avg = wine.avgRating {
-                            TextBadge(text: "\(avg.formatted()) avg", variant: .outline)
-                        }
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 12) {
+                    WineTypeIcon(wineType: wine.wineType, size: 48)
+                        .padding(8)
+                        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(wine.producer)
+                            .font(.title3.weight(.semibold))
+                        Text([wine.wineName, wine.vintage].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · "))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    VStack(spacing: 0) {
+                        Text("\(wine.quantity)")
+                            .font(.title.weight(.bold))
+                            .monospacedDigit()
+                        Text(wine.quantity == 1 ? "bottle" : "bottles")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                Spacer()
-                VStack(spacing: 0) {
-                    Text("\(wine.quantity)")
-                        .font(.title.weight(.bold))
-                        .monospacedDigit()
-                    Text(wine.quantity == 1 ? "bottle" : "bottles")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                FlowLayout(spacing: 4) {
+                    if let type = wine.wineType, !type.isEmpty {
+                        TextBadge(text: type, variant: .outline)
+                    }
+                    if let varietal = wine.varietal, !varietal.isEmpty {
+                        TextBadge(text: varietal, variant: .secondary)
+                    }
+                    ForEach(wine.ratings ?? []) { entry in
+                        if let rating = entry.rating {
+                            RatingBadge(
+                                rating: rating,
+                                initials: entry.initials,
+                                name: entry.userName,
+                                tastings: entry.tastings
+                            )
+                        }
+                    }
+                    if (wine.ratings?.count ?? 0) > 1, let avg = wine.avgRating {
+                        TextBadge(text: "\(avg.formatted()) avg", variant: .outline)
+                    }
                 }
             }
             if let actionError {
