@@ -496,6 +496,7 @@ struct AddWineForm: View {
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(Appearance.storageKey) private var appearanceRaw = Appearance.system.rawValue
     @State private var serverURL = UserDefaults.standard.string(forKey: CellarAPI.baseURLDefaultsKey)
         ?? CellarAPI.defaultBaseURL
     @State private var healthResult: String?
@@ -504,6 +505,18 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Picker("Appearance", selection: $appearanceRaw) {
+                        ForEach(Appearance.allCases) { appearance in
+                            Text(appearance.label).tag(appearance.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("Appearance")
+                } footer: {
+                    Text("System follows your device's light/dark setting.")
+                }
                 Section {
                     TextField("Server URL", text: $serverURL)
                         .keyboardType(.URL)

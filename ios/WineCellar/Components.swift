@@ -148,7 +148,7 @@ struct RatingBadge: View {
             .font(.caption2)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .background(Color.accentColor, in: Capsule())
+            .background(Color.burgundyGradient, in: Capsule())
             .foregroundStyle(.white)
         }
         .buttonStyle(.plain)
@@ -222,8 +222,8 @@ struct DrinkingWindowView: View {
     private func yearColor(_ year: Int?) -> Color {
         guard let year else { return .secondary }
         if year < referenceYear { return .secondary }
-        if year == referenceYear { return Color(hex: 0x047857) }
-        return Color(hex: 0xB45309)
+        if year == referenceYear { return .windowCurrent }
+        return .windowFuture
     }
 }
 
@@ -246,20 +246,20 @@ struct InventoryDeltaBadge: View {
     }
 
     private var background: Color {
-        if delta > 0 { return Color(hex: 0xECFDF5) }
-        if delta < 0 { return Color(hex: 0xFEF2F2) }
+        if delta > 0 { return .deltaUpFill }
+        if delta < 0 { return .deltaDownFill }
         return .clear
     }
 
     private var border: Color {
-        if delta > 0 { return Color(hex: 0xA7F3D0) }
-        if delta < 0 { return Color(hex: 0xFECACA) }
+        if delta > 0 { return .deltaUpEdge }
+        if delta < 0 { return .deltaDownEdge }
         return Color.secondary.opacity(0.3)
     }
 
     private var foreground: Color {
-        if delta > 0 { return Color(hex: 0x047857) }
-        if delta < 0 { return Color(hex: 0xB91C1C) }
+        if delta > 0 { return .deltaUpText }
+        if delta < 0 { return .deltaDownText }
         return .primary
     }
 }

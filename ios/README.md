@@ -19,6 +19,10 @@ server, overridable in the app's Settings (gear icon on the Cellar tab — use
   - `Components.swift` — wine-type glass icon (liquid color per type),
     rating badges (`93S`, tap to expand the reviewer name), drinking-window
     coloring, inventory delta badges, formatters.
+  - `Theme.swift` — adaptive palette (warm parchment in light mode; the web
+    UI's plum-black with crimson corner glows in dark), serif navigation
+    titles, burgundy→rose gradients. Follows the system appearance, with a
+    Light/Dark override in the app's Settings.
   - Screens: `CellarListView`, `WineDetailView`, `DrinkNowView`,
     `OrderedView`, `WishlistView`, `HistoryView`, `StatsView`.
   - Forms: `Forms.swift` (tasting editor, log tasting, edit/add wine,

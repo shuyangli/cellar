@@ -18,9 +18,11 @@ struct HistoryView: View {
                     }
                     ForEach(entries) { entry in
                         HistoryRowView(entry: entry) { Task { await load() } }
+                            .listRowBackground(Color.appCard)
                     }
                 }
                 .listStyle(.insetGrouped)
+                .cellarBackground()
                 .refreshable { await load() }
             }
             .navigationTitle("History")

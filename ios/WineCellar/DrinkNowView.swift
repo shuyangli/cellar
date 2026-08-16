@@ -24,6 +24,7 @@ struct DrinkNowView: View {
                            "Ask your agent to research drinking windows for these.")
                 }
                 .listStyle(.insetGrouped)
+                .cellarBackground()
                 .refreshable { await load() }
             }
             .navigationTitle("Drink Now")
@@ -83,6 +84,7 @@ struct DrinkNowView: View {
             } footer: {
                 Text(description)
             }
+            .listRowBackground(Color.appCard)
         }
     }
 

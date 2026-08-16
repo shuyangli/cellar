@@ -80,6 +80,7 @@ struct CellarListView: View {
                 wineRows
             }
             .listStyle(.insetGrouped)
+            .cellarBackground()
             .navigationTitle("Cellar")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -139,26 +140,32 @@ struct CellarListView: View {
 
     private func summarySection(_ summary: CellarSummary) -> some View {
         Section {
-            HStack(spacing: 0) {
-                stat(summary.labels.bottles, "bottles")
-                stat(summary.labels.labels, "labels")
-                stat(summary.labels.producers ?? 0, "producers")
-                stat(summary.labels.regions ?? 0, "regions")
+            VStack(alignment: .leading, spacing: 10) {
+                KickerText(text: "Private cellar view")
+                HStack(spacing: 0) {
+                    stat(summary.labels.bottles, "bottles")
+                    stat(summary.labels.labels, "labels")
+                    stat(summary.labels.producers ?? 0, "producers")
+                    stat(summary.labels.regions ?? 0, "regions")
+                }
             }
-            .listRowInsets(EdgeInsets(top: 12, leading: 8, bottom: 12, trailing: 8))
+            .listRowInsets(EdgeInsets(top: 14, leading: 14, bottom: 12, trailing: 14))
             if let cost = summary.estimatedCost {
                 Text("Estimated acquisition cost: \(Format.dollars(cost))")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
+        .listRowBackground(Color.appCard)
     }
 
     private func stat(_ value: Int, _ label: String) -> some View {
         VStack(spacing: 2) {
             Text("\(value)")
-                .font(.title3.weight(.semibold))
+                .font(.title2.weight(.semibold))
+                .fontDesign(.serif)
                 .monospacedDigit()
+                .foregroundStyle(Color.appBurgundy)
             Text(label)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -187,16 +194,26 @@ struct CellarListView: View {
                 }
             }
             .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+            .listRowBackground(Color.appCard)
         }
     }
 
+    @ViewBuilder
     private func chip(_ label: String, active: Bool, action: @escaping () -> Void) -> some View {
+        let shape = Capsule()
         Button(action: action) {
             Text(label)
-                .font(.footnote)
+                .font(.footnote.weight(active ? .medium : .regular))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(active ? Color.accentColor : Color.secondary.opacity(0.12), in: Capsule())
+                .background {
+                    if active {
+                        shape.fill(Color.burgundyGradient)
+                    } else {
+                        shape.fill(Color.secondary.opacity(0.12))
+                    }
+                }
+                .overlay(shape.stroke(Color.appBorder.opacity(active ? 0 : 0.6), lineWidth: 1))
                 .foregroundStyle(active ? .white : .primary)
         }
         .buttonStyle(.plain)
@@ -240,6 +257,7 @@ struct CellarListView: View {
             } header: {
                 Text("\(page.pagination.totalItems) labels")
             }
+            .listRowBackground(Color.appCard)
         }
     }
 }
