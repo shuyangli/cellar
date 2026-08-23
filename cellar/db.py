@@ -17,6 +17,8 @@ Schema versions (``PRAGMA user_version``):
 * ``6`` — ``wines`` gains ``vivino_url``. CellarTracker continues to use the
   pre-existing ``cellartracker_wine_id`` column so its canonical URL can be
   derived without storing the same identifier twice.
+* ``7`` — ``wines`` gains source-specific Vivino and CellarTracker community
+  ratings plus listed-price snapshots and their currencies.
 
 Forward compatibility
 ---------------------
@@ -318,6 +320,39 @@ def _migrate_v6(conn: sqlite3.Connection) -> None:
     _execute_schema(conn, _V6_SCHEMA)
 
 
+_V7_SCHEMA = """
+ALTER TABLE wines ADD COLUMN vivino_rating REAL
+    CHECK (vivino_rating IS NULL OR
+           (vivino_rating >= 0 AND vivino_rating <= 5 AND vivino_url IS NOT NULL));
+ALTER TABLE wines ADD COLUMN vivino_price REAL
+    CHECK (vivino_price IS NULL OR
+           (vivino_price >= 0 AND vivino_price <= 1000000000 AND vivino_url IS NOT NULL));
+ALTER TABLE wines ADD COLUMN vivino_price_currency TEXT
+    CHECK ((vivino_price_currency IS NULL AND vivino_price IS NULL) OR
+           (vivino_price_currency IS NOT NULL AND
+            vivino_price_currency GLOB '[A-Z][A-Z][A-Z]' AND
+            vivino_price IS NOT NULL AND vivino_url IS NOT NULL));
+ALTER TABLE wines ADD COLUMN cellartracker_rating REAL
+    CHECK (cellartracker_rating IS NULL OR
+           (cellartracker_rating >= 0 AND cellartracker_rating <= 100 AND
+            cellartracker_wine_id IS NOT NULL));
+ALTER TABLE wines ADD COLUMN cellartracker_price REAL
+    CHECK (cellartracker_price IS NULL OR
+           (cellartracker_price >= 0 AND cellartracker_price <= 1000000000 AND
+            cellartracker_wine_id IS NOT NULL));
+ALTER TABLE wines ADD COLUMN cellartracker_price_currency TEXT
+    CHECK ((cellartracker_price_currency IS NULL AND cellartracker_price IS NULL) OR
+           (cellartracker_price_currency IS NOT NULL AND
+            cellartracker_price_currency GLOB '[A-Z][A-Z][A-Z]' AND
+            cellartracker_price IS NOT NULL AND cellartracker_wine_id IS NOT NULL));
+"""
+
+
+def _migrate_v7(conn: sqlite3.Connection) -> None:
+    """Store provider-native ratings and listed-price snapshots."""
+    _execute_schema(conn, _V7_SCHEMA)
+
+
 class Migration(NamedTuple):
     """One schema step, plus how far back the result stays readable.
 
@@ -345,6 +380,8 @@ _MIGRATIONS: list[Migration] = [
     Migration(_migrate_v5, min_compatible=5),
     # Purely additive: older code safely ignores the external URL.
     Migration(_migrate_v6, min_compatible=5),
+    # Older writers can change provider links without clearing their snapshots.
+    Migration(_migrate_v7, min_compatible=7),
 ]
 SCHEMA_VERSION = len(_MIGRATIONS)
 

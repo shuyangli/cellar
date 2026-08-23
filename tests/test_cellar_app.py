@@ -1909,7 +1909,7 @@ def test_current_schema_refuses_older_code_that_cannot_manage_event_review_links
     legacy = db.connect(path)
     monkeypatch.setattr(db, "_MIGRATIONS", db._MIGRATIONS[:4])
     monkeypatch.setattr(db, "SCHEMA_VERSION", 4)
-    with pytest.raises(RuntimeError, match="requires code at schema version 5 or newer"):
+    with pytest.raises(RuntimeError, match="requires code at schema version 7 or newer"):
         db.migrate(legacy)
     legacy.close()
 

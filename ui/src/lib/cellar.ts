@@ -22,7 +22,13 @@ export type CellarItem = {
   source_app: string | null
   cellartracker_wine_id: string | null
   cellartracker_url: string | null
+  cellartracker_rating: number | null
+  cellartracker_price: number | null
+  cellartracker_price_currency: string | null
   vivino_url: string | null
+  vivino_rating: number | null
+  vivino_price: number | null
+  vivino_price_currency: string | null
   photo_ref: string | null
   last_event_reason: string | null
   updated_at: string | null
@@ -378,7 +384,13 @@ export type WineUpdate = Partial<{
   drinking_window_start: string
   drinking_window_end: string
   cellartracker_url: string
+  cellartracker_rating: number | null
+  cellartracker_price: number | null
+  cellartracker_price_currency: string | null
   vivino_url: string
+  vivino_rating: number | null
+  vivino_price: number | null
+  vivino_price_currency: string | null
   notes: string
 }>
 

@@ -93,6 +93,10 @@ def _wrap(operation, *args, **kwargs) -> Any:
         # is a bad request.
         missing = message.startswith("no ") and " with id " in message
         raise HTTPException(status_code=404 if missing else 400, detail=message) from error
+    except sqlite3.IntegrityError as error:
+        raise HTTPException(
+            status_code=400, detail="database constraint rejected the request"
+        ) from error
 
 
 # ---------------------------------------------------------------------------
@@ -112,7 +116,19 @@ class CellarItemCreate(BaseModel):
     source_app: str = "manual"
     cellartracker_wine_id: str | None = None
     cellartracker_url: str | None = None
+    cellartracker_rating: float | None = Field(
+        default=None, ge=0, le=100, allow_inf_nan=False, strict=True
+    )
+    cellartracker_price: float | None = Field(
+        default=None, ge=0, le=1_000_000_000, allow_inf_nan=False, strict=True
+    )
+    cellartracker_price_currency: str | None = None
     vivino_url: str = ""
+    vivino_rating: float | None = Field(default=None, ge=0, le=5, allow_inf_nan=False, strict=True)
+    vivino_price: float | None = Field(
+        default=None, ge=0, le=1_000_000_000, allow_inf_nan=False, strict=True
+    )
+    vivino_price_currency: str | None = None
     photo_ref: str = ""
     quantity: int = Field(default=1, ge=0)
     bottle_size_ml: int | None = Field(default=750, ge=1)
@@ -246,9 +262,7 @@ def _validated_iso_date(value: str | None, field: str) -> str | None:
 class OrderedWineCreate(BaseModel):
     wine_id: int = Field(ge=1, strict=True)
     quantity: int = Field(ge=1, strict=True)
-    price_per_bottle: float | None = Field(
-        default=None, ge=0, allow_inf_nan=False, strict=True
-    )
+    price_per_bottle: float | None = Field(default=None, ge=0, allow_inf_nan=False, strict=True)
     currency: str | None = None
     vendor: str = ""
     order_reference: str = ""
@@ -271,9 +285,7 @@ class OrderedWineCreate(BaseModel):
 
 class OrderedWineUpdate(BaseModel):
     quantity: int | None = Field(default=None, ge=1, strict=True)
-    price_per_bottle: float | None = Field(
-        default=None, ge=0, allow_inf_nan=False, strict=True
-    )
+    price_per_bottle: float | None = Field(default=None, ge=0, allow_inf_nan=False, strict=True)
     currency: str | None = None
     vendor: str | None = None
     order_reference: str | None = None
@@ -290,9 +302,7 @@ class OrderedWineUpdate(BaseModel):
 
     @field_validator("ordered_on", "expected_on")
     @classmethod
-    def dates_must_be_iso(
-        cls, value: str | None, info: ValidationInfo
-    ) -> str | None:
+    def dates_must_be_iso(cls, value: str | None, info: ValidationInfo) -> str | None:
         return _validated_iso_date(value, info.field_name or "date")
 
 
@@ -403,7 +413,19 @@ class WineUpdate(BaseModel):
     drinking_window_start: str | None = None
     drinking_window_end: str | None = None
     cellartracker_url: str | None = None
+    cellartracker_rating: float | None = Field(
+        default=None, ge=0, le=100, allow_inf_nan=False, strict=True
+    )
+    cellartracker_price: float | None = Field(
+        default=None, ge=0, le=1_000_000_000, allow_inf_nan=False, strict=True
+    )
+    cellartracker_price_currency: str | None = None
     vivino_url: str | None = None
+    vivino_rating: float | None = Field(default=None, ge=0, le=5, allow_inf_nan=False, strict=True)
+    vivino_price: float | None = Field(
+        default=None, ge=0, le=1_000_000_000, allow_inf_nan=False, strict=True
+    )
+    vivino_price_currency: str | None = None
     notes: str | None = None
 
 
@@ -416,16 +438,23 @@ def api_wine(wine_id: int, conn: sqlite3.Connection = Depends(get_conn)) -> dict
 def api_update_wine(
     wine_id: int, update: WineUpdate, conn: sqlite3.Connection = Depends(get_conn)
 ) -> dict[str, Any]:
-    fields = {key: value for key, value in update.model_dump().items() if value is not None}
+    fields = update.model_dump(exclude_unset=True)
+    clearable = {
+        "cellartracker_rating",
+        "cellartracker_price",
+        "cellartracker_price_currency",
+        "vivino_rating",
+        "vivino_price",
+        "vivino_price_currency",
+    }
+    fields = {key: value for key, value in fields.items() if value is not None or key in clearable}
     if not fields:
         raise HTTPException(status_code=400, detail="no fields to update")
     return _wrap(core.update_wine, conn, wine_id, **fields)
 
 
 @app.delete("/api/wines/{wine_id}")
-def api_delete_wine(
-    wine_id: int, conn: sqlite3.Connection = Depends(get_conn)
-) -> dict[str, Any]:
+def api_delete_wine(wine_id: int, conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
     _wrap(core.delete_wine, conn, wine_id)
     return {"ok": True, "deleted_wine_id": wine_id}
 

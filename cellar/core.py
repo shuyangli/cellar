@@ -41,11 +41,18 @@ WINE_FIELDS = {
     "source_app",
     "cellartracker_wine_id",
     "cellartracker_url",
+    "cellartracker_rating",
+    "cellartracker_price",
+    "cellartracker_price_currency",
     "vivino_url",
+    "vivino_rating",
+    "vivino_price",
+    "vivino_price_currency",
     "photo_ref",
 }
 
 WINE_TYPES = {"red", "white", "rose", "sparkling", "dessert", "fortified", "orange", "other"}
+MAX_EXTERNAL_PRICE = 1_000_000_000.0
 
 _HISTORY_FALLBACK_TIMESTAMP = "1970-01-01 00:00:00"
 
@@ -85,9 +92,7 @@ def _rows(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
 
 
 def _touch_wine(conn: sqlite3.Connection, wine_id: int) -> None:
-    conn.execute(
-        "UPDATE wines SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (wine_id,)
-    )
+    conn.execute("UPDATE wines SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (wine_id,))
 
 
 # ---------------------------------------------------------------------------
@@ -189,9 +194,7 @@ def rating_breakdown(
     return breakdown
 
 
-def set_tasting_user(
-    conn: sqlite3.Connection, tasting_id: int, user: str | int
-) -> dict[str, Any]:
+def set_tasting_user(conn: sqlite3.Connection, tasting_id: int, user: str | int) -> dict[str, Any]:
     """Reattribute an existing tasting to a different reviewer."""
     if user is None or user == "":
         raise ValueError("user is required")
@@ -240,9 +243,7 @@ def get_wine(conn: sqlite3.Connection, wine_id: int) -> dict[str, Any]:
         ).fetchall()
     )
     wine["photos"] = _rows(
-        conn.execute(
-            "SELECT * FROM photos WHERE wine_id = ? ORDER BY id", (wine_id,)
-        ).fetchall()
+        conn.execute("SELECT * FROM photos WHERE wine_id = ? ORDER BY id", (wine_id,)).fetchall()
     )
     ratings = [t["rating"] for t in wine["tastings"] if t["rating"] is not None]
     wine["avg_rating"] = round(sum(ratings) / len(ratings), 1) if ratings else None
@@ -327,7 +328,74 @@ def canonical_vivino_url(value: str) -> str:
     path = parsed.path.rstrip("/")
     if re.search(r"/w/\d+$", path, re.IGNORECASE) is None:
         raise ValueError("Vivino link must be an exact wine page ending in /w/<id>")
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    year_keys = [key for key in query if key.casefold() == "year"]
+    if any(key != "year" for key in year_keys) or len(year_keys) > 1:
+        raise ValueError("Vivino link must contain at most one lowercase year selector")
+    years = query.get("year", [])
+    if len(years) > 1:
+        raise ValueError("Vivino link must contain at most one year selector")
+    if years:
+        year = years[0]
+        if re.fullmatch(r"\d{4}", year) is None:
+            raise ValueError("Vivino year selector must be a 4-digit vintage")
+        return f"https://www.vivino.com{path}?year={year}"
     return f"https://www.vivino.com{path}"
+
+
+def _vivino_year(value: str | None) -> str | None:
+    if not value:
+        return None
+    years = parse_qs(urlparse(value).query, keep_blank_values=True).get("year", [])
+    return years[0] if len(years) == 1 else None
+
+
+def _validate_vivino_vintage(value: str | None, vintage: Any) -> None:
+    if (
+        value
+        and vintage
+        and re.fullmatch(r"\d{4}", str(vintage))
+        and _vivino_year(value) != str(vintage)
+    ):
+        raise ValueError("Vivino URL requires a year selector matching the wine vintage")
+
+
+def _finite_number(
+    value: Any, field: str, *, minimum: float, maximum: float | None = None
+) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{field} must be a number")  # noqa: TRY004 - public validation error
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"{field} must be a number")  # noqa: TRY004 - public validation error
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"{field} must be finite")
+    if maximum is not None and not minimum <= number <= maximum:
+        raise ValueError(f"{field} must be between {minimum:g} and {maximum:g}")
+    if maximum is None and number < minimum:
+        raise ValueError(f"{field} must be nonnegative")
+    return number
+
+
+def _clean_external_source_fields(cleaned: dict[str, Any]) -> None:
+    for field, maximum in (
+        ("vivino_rating", 5.0),
+        ("cellartracker_rating", 100.0),
+    ):
+        if field in cleaned and cleaned[field] is not None:
+            cleaned[field] = _finite_number(cleaned[field], field, minimum=0, maximum=maximum)
+    for field in ("vivino_price", "cellartracker_price"):
+        if field in cleaned and cleaned[field] is not None:
+            cleaned[field] = _finite_number(cleaned[field], field, minimum=0)
+            if cleaned[field] > MAX_EXTERNAL_PRICE:
+                raise ValueError(f"{field} must be at most {MAX_EXTERNAL_PRICE:g}")
+    for field in ("vivino_price_currency", "cellartracker_price_currency"):
+        if field not in cleaned or cleaned[field] is None:
+            continue
+        currency = str(cleaned[field]).upper()
+        if re.fullmatch(r"[A-Z]{3}", currency) is None:
+            raise ValueError(f"{field} must be a 3-letter currency code")
+        cleaned[field] = currency
 
 
 def _clean_wine_fields(fields: dict[str, Any]) -> dict[str, Any]:
@@ -343,9 +411,7 @@ def _clean_wine_fields(fields: dict[str, Any]) -> dict[str, Any]:
     cellartracker_link = cleaned.pop("cellartracker_url", None)
     if has_cellartracker_url:
         link_id = (
-            cellartracker_wine_id(cellartracker_link)
-            if cellartracker_link is not None
-            else None
+            cellartracker_wine_id(cellartracker_link) if cellartracker_link is not None else None
         )
         existing_id = cleaned.get("cellartracker_wine_id")
         if (
@@ -356,11 +422,10 @@ def _clean_wine_fields(fields: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("cellartracker_url and cellartracker_wine_id disagree")
         cleaned["cellartracker_wine_id"] = link_id
     elif "cellartracker_wine_id" in cleaned and cleaned["cellartracker_wine_id"] is not None:
-        cleaned["cellartracker_wine_id"] = cellartracker_wine_id(
-            cleaned["cellartracker_wine_id"]
-        )
+        cleaned["cellartracker_wine_id"] = cellartracker_wine_id(cleaned["cellartracker_wine_id"])
     if cleaned.get("vivino_url") is not None:
         cleaned["vivino_url"] = canonical_vivino_url(cleaned["vivino_url"])
+    _clean_external_source_fields(cleaned)
     wine_type = cleaned.get("wine_type")
     if wine_type is not None:
         wine_type = wine_type.lower()
@@ -376,6 +441,20 @@ def add_wine(conn: sqlite3.Connection, **fields: Any) -> dict[str, Any]:
         raise ValueError("producer and wine_name are required")
     cleaned.setdefault("bottle_size_ml", 750)
     cleaned.setdefault("source_app", "agent")
+    for provider in ("vivino", "cellartracker"):
+        price = f"{provider}_price"
+        currency = f"{provider}_price_currency"
+        link = "vivino_url" if provider == "vivino" else "cellartracker_wine_id"
+        metrics = (f"{provider}_rating", price, currency)
+        if any(cleaned.get(field) is not None for field in metrics) and not cleaned.get(link):
+            raise ValueError(f"{provider} rating/price requires {provider}_url")
+        if cleaned.get(price) is None:
+            if cleaned.get(currency) is not None:
+                raise ValueError(f"{currency} requires {price}")
+            cleaned.pop(currency, None)
+        elif not cleaned.get(currency):
+            raise ValueError(f"{price} requires {currency}")
+    _validate_vivino_vintage(cleaned.get("vivino_url"), cleaned.get("vintage"))
     columns = ", ".join(cleaned)
     placeholders = ", ".join("?" for _ in cleaned)
     cursor = conn.execute(
@@ -392,8 +471,54 @@ def update_wine(
     cleaned = _clean_wine_fields(fields)
     if not cleaned:
         raise ValueError("no fields to update")
-    if conn.execute("SELECT 1 FROM wines WHERE id = ?", (wine_id,)).fetchone() is None:
+    current = conn.execute(
+        """
+        SELECT producer, wine_name, vintage,
+               vivino_url, vivino_price, vivino_price_currency,
+               cellartracker_wine_id, cellartracker_price,
+               cellartracker_price_currency
+        FROM wines WHERE id = ?
+        """,
+        (wine_id,),
+    ).fetchone()
+    if current is None:
         raise ValueError(f"no wine with id {wine_id}")
+    identity_changed = any(
+        field in cleaned and cleaned[field] != current[field]
+        for field in ("producer", "wine_name", "vintage")
+    )
+    for provider in ("vivino", "cellartracker"):
+        price = f"{provider}_price"
+        currency = f"{provider}_price_currency"
+        rating = f"{provider}_rating"
+        link = "vivino_url" if provider == "vivino" else "cellartracker_wine_id"
+        link_changed = link in cleaned and cleaned[link] != current[link]
+        if identity_changed:
+            for field in (link, rating, price, currency):
+                cleaned.setdefault(field, None)
+        if price in cleaned:
+            if cleaned[price] is None:
+                cleaned[currency] = None
+            elif cleaned.get(currency):
+                pass
+            elif not link_changed and not identity_changed and current[currency]:
+                cleaned[currency] = current[currency]
+            else:
+                raise ValueError(f"{price} requires {currency}")
+        if link_changed:
+            for field in (rating, price, currency):
+                cleaned.setdefault(field, None)
+        effective_price = cleaned.get(price, current[price])
+        if currency in cleaned and cleaned[currency] is not None and effective_price is None:
+            raise ValueError(f"{currency} requires {price}")
+        effective_link = cleaned.get(link, current[link])
+        metrics = (rating, price, currency)
+        if any(cleaned.get(field) is not None for field in metrics) and not effective_link:
+            raise ValueError(f"{provider} rating/price requires {provider}_url")
+    effective_vintage = cleaned.get("vintage", current["vintage"])
+    effective_vivino_url = cleaned.get("vivino_url", current["vivino_url"])
+    if "vivino_url" in cleaned or "vintage" in cleaned:
+        _validate_vivino_vintage(effective_vivino_url, effective_vintage)
     assignments = ", ".join(f"{key} = ?" for key in cleaned)
     conn.execute(
         f"UPDATE wines SET {assignments}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -634,9 +759,7 @@ def review_inventory_event(
     ).fetchone()
     if event is None:
         raise ValueError(f"no inventory event with id {event_id}")
-    event_tasted_on = tasted_on or str(
-        event["occurred_at"] or _HISTORY_FALLBACK_TIMESTAMP
-    )[:10]
+    event_tasted_on = tasted_on or str(event["occurred_at"] or _HISTORY_FALLBACK_TIMESTAMP)[:10]
     _insert_tasting(
         conn,
         event["wine_id"],
@@ -657,18 +780,14 @@ def review_inventory_event(
     return get_wine(conn, event["wine_id"])
 
 
-def update_tasting(
-    conn: sqlite3.Connection, tasting_id: int, **fields: Any
-) -> dict[str, Any]:
+def update_tasting(conn: sqlite3.Connection, tasting_id: int, **fields: Any) -> dict[str, Any]:
     """Edit a review without changing the inventory event linked to its tasting."""
     unknown = set(fields) - TASTING_UPDATE_FIELDS
     if unknown:
         raise ValueError(f"unknown tasting fields: {sorted(unknown)}")
     if not fields:
         raise ValueError("no fields to update")
-    row = conn.execute(
-        "SELECT wine_id FROM tastings WHERE id = ?", (tasting_id,)
-    ).fetchone()
+    row = conn.execute("SELECT wine_id FROM tastings WHERE id = ?", (tasting_id,)).fetchone()
     if row is None:
         raise ValueError(f"no tasting with id {tasting_id}")
 
@@ -748,8 +867,7 @@ def delete_tasting(conn: sqlite3.Connection, tasting_id: int) -> dict[str, Any]:
     conn.execute("DELETE FROM tastings WHERE id = ?", (tasting_id,))
     if consumed:
         conn.execute(
-            "UPDATE wines SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP"
-            " WHERE id = ?",
+            "UPDATE wines SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             (consumed, wine_id),
         )
     conn.commit()
@@ -768,9 +886,9 @@ def delete_purchase(conn: sqlite3.Connection, purchase_id: int) -> dict[str, Any
         "SELECT COALESCE(SUM(delta), 0) FROM inventory_events WHERE purchase_id = ?",
         (purchase_id,),
     ).fetchone()[0]
-    current = conn.execute(
-        "SELECT quantity FROM wines WHERE id = ?", (wine_id,)
-    ).fetchone()["quantity"]
+    current = conn.execute("SELECT quantity FROM wines WHERE id = ?", (wine_id,)).fetchone()[
+        "quantity"
+    ]
     if current - added < 0:
         raise ValueError(
             "cannot delete purchase: its bottles are already consumed"
@@ -801,8 +919,7 @@ def delete_purchase(conn: sqlite3.Connection, purchase_id: int) -> dict[str, Any
     conn.execute("DELETE FROM purchases WHERE id = ?", (purchase_id,))
     if added:
         conn.execute(
-            "UPDATE wines SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP"
-            " WHERE id = ?",
+            "UPDATE wines SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             (added, wine_id),
         )
     conn.commit()
@@ -814,14 +931,11 @@ def delete_wine(conn: sqlite3.Connection, wine_id: int) -> None:
     if conn.execute("SELECT 1 FROM wines WHERE id = ?", (wine_id,)).fetchone() is None:
         raise ValueError(f"no wine with id {wine_id}")
     photo_paths = [
-        row["path"]
-        for row in conn.execute("SELECT path FROM photos WHERE wine_id = ?", (wine_id,))
+        row["path"] for row in conn.execute("SELECT path FROM photos WHERE wine_id = ?", (wine_id,))
     ]
     # Break the reverse review -> event links before deleting the event ledger;
     # both sides are deleted below, but SQLite enforces each intermediate step.
-    conn.execute(
-        "UPDATE tastings SET inventory_event_id = NULL WHERE wine_id = ?", (wine_id,)
-    )
+    conn.execute("UPDATE tastings SET inventory_event_id = NULL WHERE wine_id = ?", (wine_id,))
     for table in (
         "inventory_events",
         "photos",
@@ -1008,9 +1122,7 @@ def add_ordered_wine(
 
     merge_fields = cleaned.copy()
     cleaned.setdefault("currency", "USD")
-    cleaned.setdefault(
-        "ordered_on", dt.datetime.now().astimezone().date().isoformat()
-    )
+    cleaned.setdefault("ordered_on", dt.datetime.now().astimezone().date().isoformat())
     columns = ", ".join(["wine_id", *cleaned])
     placeholders = ", ".join("?" for _ in range(len(cleaned) + 1))
     try:
@@ -1027,18 +1139,14 @@ def add_ordered_wine(
             raise
         if existing["status"] != "ordered":
             return get_ordered_wine(conn, existing["id"])
-        updates = {
-            key: value for key, value in merge_fields.items() if value is not None
-        }
+        updates = {key: value for key, value in merge_fields.items() if value is not None}
         return update_ordered_wine(conn, existing["id"], **updates)
     conn.commit()
     assert cursor.lastrowid is not None
     return get_ordered_wine(conn, cursor.lastrowid)
 
 
-def update_ordered_wine(
-    conn: sqlite3.Connection, order_id: int, **fields: Any
-) -> dict[str, Any]:
+def update_ordered_wine(conn: sqlite3.Connection, order_id: int, **fields: Any) -> dict[str, Any]:
     if not fields:
         raise ValueError("no fields to update")
     current = get_ordered_wine(conn, order_id)
@@ -1078,9 +1186,7 @@ def update_ordered_wine(
 def mark_ordered_wine_arrived(
     conn: sqlite3.Connection, order_id: int, arrived_on: str | None = None
 ) -> dict[str, Any]:
-    arrived_on = (
-        arrived_on or dt.datetime.now().astimezone().date().isoformat()
-    ).strip()
+    arrived_on = (arrived_on or dt.datetime.now().astimezone().date().isoformat()).strip()
     try:
         parsed_arrival = dt.date.fromisoformat(arrived_on)
     except ValueError as error:
@@ -1168,9 +1274,7 @@ def list_inventory(
             params.append(f"%{value}%")
     where_sql = f"WHERE {' AND '.join(where)}" if where else ""
 
-    total_items = conn.execute(
-        f"SELECT COUNT(*) FROM wines {where_sql}", params
-    ).fetchone()[0]
+    total_items = conn.execute(f"SELECT COUNT(*) FROM wines {where_sql}", params).fetchone()[0]
     total_pages = max(1, (total_items + page_size - 1) // page_size)
     current_page = min(max(page, 1), total_pages)
     offset = (current_page - 1) * page_size
@@ -1218,8 +1322,7 @@ def summary(conn: sqlite3.Connection) -> dict[str, Any]:
         """
     ).fetchone()
     regions = conn.execute(
-        "SELECT COUNT(DISTINCT region) FROM wines"
-        " WHERE quantity > 0 AND COALESCE(region, '') != ''"
+        "SELECT COUNT(DISTINCT region) FROM wines WHERE quantity > 0 AND COALESCE(region, '') != ''"
     ).fetchone()[0]
     return {
         "labels": {
@@ -1343,7 +1446,7 @@ def drinking_window_alerts(conn: sqlite3.Connection) -> dict[str, Any]:
         else:
             ready_to_hold.append(item)
     for bucket in (drink_first, drink_soon, ready_to_hold, long_term, approaching):
-        bucket.sort(key=lambda w: (_window_year(w["drinking_window_end"]) or 9999))
+        bucket.sort(key=lambda w: _window_year(w["drinking_window_end"]) or 9999)
     return {
         "year": year,
         "drink_first": drink_first,
@@ -1466,9 +1569,7 @@ def full_history(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                 "purchase_date",
             )
         }
-        event_payload["occurred_at"] = (
-            event["occurred_at"] or _HISTORY_FALLBACK_TIMESTAMP
-        )
+        event_payload["occurred_at"] = event["occurred_at"] or _HISTORY_FALLBACK_TIMESTAMP
         entries.append(
             {
                 "key": f"inventory:{event['id']}",
@@ -1519,8 +1620,11 @@ def full_history(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 def read_query(conn: sqlite3.Connection, sql: str, limit: int = 200) -> list[dict[str, Any]]:
     """Read-only SQL escape hatch for agent analytics."""
-    if re.search(r"\b(insert|update|delete|drop|alter|create|replace|attach|pragma|vacuum)\b",
-                 sql, re.IGNORECASE):
+    if re.search(
+        r"\b(insert|update|delete|drop|alter|create|replace|attach|pragma|vacuum)\b",
+        sql,
+        re.IGNORECASE,
+    ):
         raise ValueError("only read-only SELECT queries are allowed")
     if not re.match(r"\s*(select|with)\b", sql, re.IGNORECASE):
         raise ValueError("query must start with SELECT or WITH")

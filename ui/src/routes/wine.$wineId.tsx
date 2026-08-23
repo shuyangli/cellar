@@ -182,20 +182,6 @@ function WinePage() {
           >
             {editing ? 'Close editor' : 'Edit details'}
           </Button>
-          {wine.vivino_url ? (
-            <Button variant="outline" size="sm" asChild>
-              <a href={wine.vivino_url} target="_blank" rel="noreferrer">
-                Vivino ↗
-              </a>
-            </Button>
-          ) : null}
-          {wine.cellartracker_url ? (
-            <Button variant="outline" size="sm" asChild>
-              <a href={wine.cellartracker_url} target="_blank" rel="noreferrer">
-                CellarTracker ↗
-              </a>
-            </Button>
-          ) : null}
           <Button variant="destructive" size="sm" onClick={onDeleteWine}>
             Delete wine
           </Button>
@@ -232,6 +218,9 @@ const EDIT_FIELDS: Array<{
   key: keyof WineUpdate
   label: string
   type?: 'number' | 'select'
+  min?: number
+  max?: number
+  step?: number
   span?: boolean
 }> = [
   { key: 'producer', label: 'Producer' },
@@ -248,11 +237,48 @@ const EDIT_FIELDS: Array<{
   { key: 'drinking_window_end', label: 'Drink until (year)' },
   { key: 'location', label: 'Location' },
   { key: 'vivino_url', label: 'Vivino URL', span: true },
+  {
+    key: 'vivino_rating',
+    label: 'Vivino rating (0–5)',
+    type: 'number',
+    min: 0,
+    max: 5,
+    step: 0.1,
+  },
+  {
+    key: 'vivino_price',
+    label: 'Vivino listed price',
+    type: 'number',
+    min: 0,
+    max: 1_000_000_000,
+    step: 0.01,
+  },
+  { key: 'vivino_price_currency', label: 'Vivino price currency' },
   { key: 'cellartracker_url', label: 'CellarTracker URL', span: true },
+  {
+    key: 'cellartracker_rating',
+    label: 'CellarTracker rating (0–100)',
+    type: 'number',
+    min: 0,
+    max: 100,
+    step: 0.1,
+  },
+  {
+    key: 'cellartracker_price',
+    label: 'CellarTracker listed price',
+    type: 'number',
+    min: 0,
+    max: 1_000_000_000,
+    step: 0.01,
+  },
+  {
+    key: 'cellartracker_price_currency',
+    label: 'CellarTracker price currency',
+  },
   { key: 'notes', label: 'Notes', span: true },
 ]
 
-function EditCard({
+export function EditCard({
   wine,
   onSaved,
   onError,
@@ -284,12 +310,33 @@ function EditCard({
         const originalText = original != null ? String(original) : ''
         if (value === originalText) continue
         if (field.type === 'number') {
+          if (value === '') {
+            if (original != null) fields[field.key] = null as never
+            continue
+          }
           const parsed = Number(value)
-          if (Number.isFinite(parsed) && parsed > 0) {
+          const minimum = field.min ?? 0
+          const withinMaximum = field.max == null || parsed <= field.max
+          if (Number.isFinite(parsed) && parsed >= minimum && withinMaximum) {
             fields[field.key] = parsed as never
           }
         } else {
           fields[field.key] = value as never
+        }
+      }
+      const identityChanged = ['producer', 'wine_name', 'vintage'].some(
+        (key) => key in fields,
+      )
+      for (const provider of ['vivino', 'cellartracker'] as const) {
+        const linkKey = `${provider}_url` as keyof WineUpdate
+        const priceKey = `${provider}_price` as keyof WineUpdate
+        const currencyKey = `${provider}_price_currency` as keyof WineUpdate
+        if (
+          (identityChanged || linkKey in fields) &&
+          fields[priceKey] != null
+        ) {
+          const currency = draft[currencyKey].trim()
+          if (currency) fields[currencyKey] = currency as never
         }
       }
       if (Object.keys(fields).length === 0) {
@@ -361,6 +408,9 @@ function EditCard({
               ) : (
                 <input
                   type={field.type === 'number' ? 'number' : 'text'}
+                  min={field.min}
+                  max={field.max}
+                  step={field.step}
                   className={inputClass}
                   value={draft[field.key] ?? ''}
                   onChange={(event) =>
@@ -391,6 +441,118 @@ function Fact({ label, value }: { label: string; value: React.ReactNode }) {
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="text-sm">{value}</dd>
     </div>
+  )
+}
+
+function formatProviderRating(value: number, scale: number): string {
+  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(value)} / ${scale}`
+}
+
+function formatProviderPrice(value: number, currency: string | null): string {
+  if (!currency)
+    return `${value.toLocaleString('en-US')} (currency unavailable)`
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency,
+    }).format(value)
+  } catch {
+    return `${currency} ${value.toLocaleString('en-US')}`
+  }
+}
+
+function ExternalSourceRow({
+  name,
+  url,
+  rating,
+  ratingScale,
+  price,
+  currency,
+}: {
+  name: string
+  url: string | null
+  rating: number | null
+  ratingScale: number
+  price: number | null
+  currency: string | null
+}) {
+  return (
+    <div className="grid gap-2 border-b py-3 last:border-b-0 sm:grid-cols-[minmax(9rem,1.4fr)_minmax(6rem,1fr)_minmax(7rem,1fr)] sm:items-center">
+      <div className="text-sm font-medium">
+        {url ? (
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary underline decoration-primary/35 underline-offset-4 hover:decoration-primary"
+          >
+            {name} ↗
+          </a>
+        ) : (
+          name
+        )}
+      </div>
+      <div>
+        <div className="text-xs text-muted-foreground">Rating</div>
+        <div className="text-sm tabular-nums">
+          {rating != null ? formatProviderRating(rating, ratingScale) : '—'}
+        </div>
+      </div>
+      <div>
+        <div className="text-xs text-muted-foreground">Listed price</div>
+        <div className="text-sm tabular-nums">
+          {price != null ? formatProviderPrice(price, currency) : '—'}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function ExternalSources({ wine }: { wine: WineDossier }) {
+  const hasVivino =
+    wine.vivino_url != null ||
+    wine.vivino_rating != null ||
+    wine.vivino_price != null
+  const hasCellarTracker =
+    wine.cellartracker_url != null ||
+    wine.cellartracker_rating != null ||
+    wine.cellartracker_price != null
+  if (!hasVivino && !hasCellarTracker) return null
+
+  return (
+    <section
+      className="mt-4 border-t pt-4"
+      aria-labelledby="external-sources-heading"
+    >
+      <h3
+        id="external-sources-heading"
+        className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+      >
+        External sources
+      </h3>
+      <div className="mt-1">
+        {hasVivino ? (
+          <ExternalSourceRow
+            name="Vivino"
+            url={wine.vivino_url}
+            rating={wine.vivino_rating}
+            ratingScale={5}
+            price={wine.vivino_price}
+            currency={wine.vivino_price_currency}
+          />
+        ) : null}
+        {hasCellarTracker ? (
+          <ExternalSourceRow
+            name="CellarTracker"
+            url={wine.cellartracker_url}
+            rating={wine.cellartracker_rating}
+            ratingScale={100}
+            price={wine.cellartracker_price}
+            currency={wine.cellartracker_price_currency}
+          />
+        ) : null}
+      </div>
+    </section>
   )
 }
 
@@ -432,6 +594,7 @@ function FactsCard({ wine }: { wine: WineDossier }) {
           />
           <Fact label="Last vendor" value={wine.acquired_from} />
         </dl>
+        <ExternalSources wine={wine} />
         {wine.notes ? (
           <p className="mt-4 border-t pt-3 text-sm text-muted-foreground">
             {wine.notes}
