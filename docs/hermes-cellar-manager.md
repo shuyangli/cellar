@@ -37,9 +37,15 @@ the **Ordered** table — do not add bottles to physical inventory yet.
    (red/white/rose/sparkling/dessert/fortified/orange/other), country, region,
    appellation, varietal/grapes, and a realistic drinking window (years, e.g.
    2027–2038) from your knowledge or the web. Find the exact Vivino wine page
-   and exact CellarTracker vintage page, then pass them to `add_wine` as
-   `vivino_url` and `cellartracker_url`. Never use search-result URLs or guess a
-   near match; leave an unresolved provider blank and report it.
+   and exact CellarTracker vintage page. When shown for the exact wine and
+   vintage, also capture Vivino's native 0–5 community rating and listed bottle
+   price, and CellarTracker's native 0–100 community rating and listed/auction
+   bottle price. For a 4-digit vintage, preserve Vivino's matching `?year=YYYY`
+   selector. Pass links, ratings, prices, and explicitly displayed 3-letter
+   price currencies to `add_wine` using the provider-prefixed fields. Prices are
+   external snapshots, not what we paid. Never assume USD, use search-result
+   URLs, convert rating scales, copy a nearby vintage, or guess missing values;
+   leave unresolved data blank and report it.
 4. `log_purchase` with quantity, per-bottle price, currency, vendor, purchase
    date (ISO), and source (`online`/`in_person`/`gift`).
 5. If there is a label or receipt image, save it to a file and `attach_photo`

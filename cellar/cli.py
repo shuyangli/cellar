@@ -30,7 +30,13 @@ def _add_wine_field_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--drink-from", default="", dest="drinking_window_start")
     parser.add_argument("--drink-until", default="", dest="drinking_window_end")
     parser.add_argument("--vivino-url", default="")
+    parser.add_argument("--vivino-rating", type=float, default=None, help="0-5")
+    parser.add_argument("--vivino-price", type=float, default=None)
+    parser.add_argument("--vivino-currency", default="", dest="vivino_price_currency")
     parser.add_argument("--cellartracker-url", default="")
+    parser.add_argument("--cellartracker-rating", type=float, default=None, help="0-100")
+    parser.add_argument("--cellartracker-price", type=float, default=None)
+    parser.add_argument("--cellartracker-currency", default="", dest="cellartracker_price_currency")
     parser.add_argument("--notes", default="")
 
 
@@ -146,7 +152,19 @@ def main() -> None:
                         drinking_window_start=args.drinking_window_start,
                         drinking_window_end=args.drinking_window_end,
                         vivino_url=args.vivino_url,
+                        vivino_rating=args.vivino_rating,
+                        vivino_price=args.vivino_price,
+                        vivino_price_currency=(
+                            args.vivino_price_currency if args.vivino_price is not None else ""
+                        ),
                         cellartracker_url=args.cellartracker_url,
+                        cellartracker_rating=args.cellartracker_rating,
+                        cellartracker_price=args.cellartracker_price,
+                        cellartracker_price_currency=(
+                            args.cellartracker_price_currency
+                            if args.cellartracker_price is not None
+                            else ""
+                        ),
                         notes=args.notes,
                         source_app="cli",
                     )
@@ -185,7 +203,10 @@ def main() -> None:
             case "adjust":
                 _print(
                     core.adjust_inventory(
-                        conn, args.wine_id, args.delta, reason=args.reason,
+                        conn,
+                        args.wine_id,
+                        args.delta,
+                        reason=args.reason,
                         event_type=args.event_type,
                     )
                 )
