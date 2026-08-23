@@ -64,6 +64,8 @@ struct Wine: Decodable, Identifiable {
     var varietal: String?
     var sourceApp: String?
     var cellartrackerWineId: String?
+    var cellartrackerUrl: String?
+    var vivinoUrl: String?
     var photoRef: String?
     var notes: String?
     var createdAt: String?

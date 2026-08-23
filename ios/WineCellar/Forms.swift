@@ -282,7 +282,8 @@ struct EditWineForm: View {
     private static let editableKeys = [
         "producer", "wine_name", "vintage", "wine_type", "country", "region",
         "appellation", "varietal", "grapes", "bottle_size_ml",
-        "drinking_window_start", "drinking_window_end", "location", "notes",
+        "drinking_window_start", "drinking_window_end", "location",
+        "vivino_url", "cellartracker_url", "notes",
     ]
 
     init(wine: Wine, onSaved: @escaping () -> Void) {
@@ -302,6 +303,8 @@ struct EditWineForm: View {
             "drinking_window_start": wine.drinkingWindowStart ?? "",
             "drinking_window_end": wine.drinkingWindowEnd ?? "",
             "location": wine.location ?? "",
+            "vivino_url": wine.vivinoUrl ?? "",
+            "cellartracker_url": wine.cellartrackerUrl ?? "",
             "notes": wine.notes ?? "",
         ]
         _fields = State(initialValue: values)
@@ -328,6 +331,10 @@ struct EditWineForm: View {
                     field("Drink from (year)", "drinking_window_start", keyboard: .numberPad)
                     field("Drink until (year)", "drinking_window_end", keyboard: .numberPad)
                     field("Location", "location")
+                }
+                Section("Links") {
+                    field("Vivino URL", "vivino_url", keyboard: .URL)
+                    field("CellarTracker URL", "cellartracker_url", keyboard: .URL)
                 }
                 Section("Notes") {
                     TextField("Notes", text: binding("notes"), axis: .vertical)
@@ -359,6 +366,8 @@ struct EditWineForm: View {
         LabeledContent(label) {
             TextField(label, text: binding(key))
                 .keyboardType(keyboard)
+                .textInputAutocapitalization(keyboard == .URL ? .never : nil)
+                .autocorrectionDisabled(keyboard == .URL)
                 .multilineTextAlignment(.trailing)
         }
     }
