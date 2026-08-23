@@ -174,6 +174,18 @@ struct WineDetailView: View {
                 Label("Edit details", systemImage: "pencil")
             }
 
+            if let vivino = externalURL(wine.vivinoUrl) {
+                Link(destination: vivino) {
+                    Label("Vivino", systemImage: "arrow.up.right.square")
+                }
+            }
+
+            if let cellartracker = externalURL(wine.cellartrackerUrl) {
+                Link(destination: cellartracker) {
+                    Label("CellarTracker", systemImage: "arrow.up.right.square")
+                }
+            }
+
             Button(role: .destructive) {
                 confirmDelete = true
             } label: {
@@ -206,6 +218,11 @@ struct WineDetailView: View {
             }
         }
         .listRowBackground(Color.appCard)
+    }
+
+    private func externalURL(_ string: String?) -> URL? {
+        guard let string, !string.isEmpty else { return nil }
+        return URL(string: string)
     }
 
     @ViewBuilder
