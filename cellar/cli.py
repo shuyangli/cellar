@@ -29,6 +29,8 @@ def _add_wine_field_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--bottle-size-ml", type=int, default=750)
     parser.add_argument("--drink-from", default="", dest="drinking_window_start")
     parser.add_argument("--drink-until", default="", dest="drinking_window_end")
+    parser.add_argument("--vivino-url", default="")
+    parser.add_argument("--cellartracker-url", default="")
     parser.add_argument("--notes", default="")
 
 
@@ -143,6 +145,8 @@ def main() -> None:
                         bottle_size_ml=args.bottle_size_ml,
                         drinking_window_start=args.drinking_window_start,
                         drinking_window_end=args.drinking_window_end,
+                        vivino_url=args.vivino_url,
+                        cellartracker_url=args.cellartracker_url,
                         notes=args.notes,
                         source_app="cli",
                     )

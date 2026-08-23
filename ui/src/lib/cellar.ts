@@ -21,6 +21,8 @@ export type CellarItem = {
   notes: string | null
   source_app: string | null
   cellartracker_wine_id: string | null
+  cellartracker_url: string | null
+  vivino_url: string | null
   photo_ref: string | null
   last_event_reason: string | null
   updated_at: string | null
@@ -375,6 +377,8 @@ export type WineUpdate = Partial<{
   location: string
   drinking_window_start: string
   drinking_window_end: string
+  cellartracker_url: string
+  vivino_url: string
   notes: string
 }>
 

@@ -14,6 +14,9 @@ Schema versions (``PRAGMA user_version``):
   shipment metadata and an idempotent handoff into purchases/inventory.
 * ``5`` — ``tastings`` gains ``inventory_event_id`` so one inventory change can
   carry reviews from multiple people without applying the stock change again.
+* ``6`` — ``wines`` gains ``vivino_url``. CellarTracker continues to use the
+  pre-existing ``cellartracker_wine_id`` column so its canonical URL can be
+  derived without storing the same identifier twice.
 
 Forward compatibility
 ---------------------
@@ -305,6 +308,16 @@ def _migrate_v5(conn: sqlite3.Connection) -> None:
     _execute_schema(conn, _V5_SCHEMA)
 
 
+_V6_SCHEMA = """
+ALTER TABLE wines ADD COLUMN vivino_url TEXT;
+"""
+
+
+def _migrate_v6(conn: sqlite3.Connection) -> None:
+    """Store the canonical Vivino wine page alongside CellarTracker's id."""
+    _execute_schema(conn, _V6_SCHEMA)
+
+
 class Migration(NamedTuple):
     """One schema step, plus how far back the result stays readable.
 
@@ -330,6 +343,8 @@ _MIGRATIONS: list[Migration] = [
     Migration(_migrate_v4, min_compatible=4),
     # Older code does not clear review links before deleting inventory events.
     Migration(_migrate_v5, min_compatible=5),
+    # Purely additive: older code safely ignores the external URL.
+    Migration(_migrate_v6, min_compatible=5),
 ]
 SCHEMA_VERSION = len(_MIGRATIONS)
 

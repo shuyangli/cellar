@@ -110,7 +110,9 @@ class CellarItemCreate(BaseModel):
     wine_type: str = ""
     grapes: str = ""
     source_app: str = "manual"
-    cellartracker_wine_id: str = ""
+    cellartracker_wine_id: str | None = None
+    cellartracker_url: str | None = None
+    vivino_url: str = ""
     photo_ref: str = ""
     quantity: int = Field(default=1, ge=0)
     bottle_size_ml: int | None = Field(default=750, ge=1)
@@ -338,10 +340,10 @@ def api_cellar(
 def create_cellar_item(
     item: CellarItemCreate, conn: sqlite3.Connection = Depends(get_conn)
 ) -> dict[str, Any]:
-    fields = item.model_dump()
+    fields = item.model_dump(exclude_none=True)
     quantity = fields.pop("quantity")
-    price = fields.pop("acquired_price")
-    vendor = fields.pop("acquired_from")
+    price = fields.pop("acquired_price", None)
+    vendor = fields.pop("acquired_from", "")
     wine = _wrap(core.add_wine, conn, **fields)
     if quantity > 0:
         wine = _wrap(
@@ -400,6 +402,8 @@ class WineUpdate(BaseModel):
     location: str | None = None
     drinking_window_start: str | None = None
     drinking_window_end: str | None = None
+    cellartracker_url: str | None = None
+    vivino_url: str | None = None
     notes: str | None = None
 
 
