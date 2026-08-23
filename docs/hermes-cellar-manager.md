@@ -36,7 +36,10 @@ the **Ordered** table — do not add bottles to physical inventory yet.
 3. If new: enrich before adding — determine wine_type
    (red/white/rose/sparkling/dessert/fortified/orange/other), country, region,
    appellation, varietal/grapes, and a realistic drinking window (years, e.g.
-   2027–2038) from your knowledge or the web. Then `add_wine`.
+   2027–2038) from your knowledge or the web. Find the exact Vivino wine page
+   and exact CellarTracker vintage page, then pass them to `add_wine` as
+   `vivino_url` and `cellartracker_url`. Never use search-result URLs or guess a
+   near match; leave an unresolved provider blank and report it.
 4. `log_purchase` with quantity, per-bottle price, currency, vendor, purchase
    date (ISO), and source (`online`/`in_person`/`gift`).
 5. If there is a label or receipt image, save it to a file and `attach_photo`
@@ -70,3 +73,13 @@ the **Ordered** table — do not add bottles to physical inventory yet.
   when it was seen for sale. `wishlist_remove` once it's bought or dropped.
 - Analytics questions: `cellar_stats`, or `query` for read-only SQL.
 - Ask rather than guess when a wine's identity is unclear from a photo.
+
+## Backfilling external links
+
+`scripts/backfill_wine_links.py` provides a review-first migration. Run it
+from the repository with `.venv/bin/python scripts/backfill_wine_links.py`.
+`export` creates a CSV for in-stock wines (use `--all` for every historical
+label) with provider search links. A human or AI reviewer fills exact URLs and
+marks only verified rows `approved`. Run `apply` without `--write` first; the
+write mode re-validates URL shapes and unchanged wine identity, then creates
+and integrity-checks a SQLite backup before updating records.

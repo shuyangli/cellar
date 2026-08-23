@@ -1898,12 +1898,12 @@ def test_ordered_wine_endpoint_rejects_invalid_metadata(client, payload):
     assert response.status_code == 422
 
 
-def test_v5_schema_refuses_older_code_that_cannot_manage_event_review_links(
+def test_current_schema_refuses_older_code_that_cannot_manage_event_review_links(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     path = tmp_path / "future.db"
     connection = db.open_db(path)
-    assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
     connection.close()
 
     legacy = db.connect(path)

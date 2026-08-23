@@ -182,6 +182,20 @@ function WinePage() {
           >
             {editing ? 'Close editor' : 'Edit details'}
           </Button>
+          {wine.vivino_url ? (
+            <Button variant="outline" size="sm" asChild>
+              <a href={wine.vivino_url} target="_blank" rel="noreferrer">
+                Vivino ↗
+              </a>
+            </Button>
+          ) : null}
+          {wine.cellartracker_url ? (
+            <Button variant="outline" size="sm" asChild>
+              <a href={wine.cellartracker_url} target="_blank" rel="noreferrer">
+                CellarTracker ↗
+              </a>
+            </Button>
+          ) : null}
           <Button variant="destructive" size="sm" onClick={onDeleteWine}>
             Delete wine
           </Button>
@@ -233,6 +247,8 @@ const EDIT_FIELDS: Array<{
   { key: 'drinking_window_start', label: 'Drink from (year)' },
   { key: 'drinking_window_end', label: 'Drink until (year)' },
   { key: 'location', label: 'Location' },
+  { key: 'vivino_url', label: 'Vivino URL', span: true },
+  { key: 'cellartracker_url', label: 'CellarTracker URL', span: true },
   { key: 'notes', label: 'Notes', span: true },
 ]
 

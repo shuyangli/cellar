@@ -19,7 +19,7 @@ import uuid
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from . import config
 
@@ -40,6 +40,8 @@ WINE_FIELDS = {
     "notes",
     "source_app",
     "cellartracker_wine_id",
+    "cellartracker_url",
+    "vivino_url",
     "photo_ref",
 }
 
@@ -211,6 +213,7 @@ def get_wine(conn: sqlite3.Connection, wine_id: int) -> dict[str, Any]:
     wine = _row(conn.execute("SELECT * FROM wines WHERE id = ?", (wine_id,)).fetchone())
     if wine is None:
         raise ValueError(f"no wine with id {wine_id}")
+    wine["cellartracker_url"] = safe_cellartracker_url(wine.get("cellartracker_wine_id"))
     wine["purchases"] = _rows(
         conn.execute(
             "SELECT * FROM purchases WHERE wine_id = ? ORDER BY purchase_date, id",
@@ -275,15 +278,89 @@ def find_wines(conn: sqlite3.Connection, query: str, limit: int = 10) -> list[di
     return _rows(rows)
 
 
+def cellartracker_wine_id(value: str) -> str:
+    """Validate a CellarTracker id or canonical wine URL and return its id."""
+    text = str(value).strip()
+    if text.isdigit() and int(text) > 0:
+        return str(int(text))
+    parsed = urlparse(text)
+    if parsed.scheme != "https" or parsed.hostname not in {
+        "cellartracker.com",
+        "www.cellartracker.com",
+    }:
+        raise ValueError("CellarTracker link must be an https://www.cellartracker.com wine URL")
+    if parsed.path.rstrip("/").lower() != "/wine.asp":
+        raise ValueError("CellarTracker link must point to wine.asp?iWine=<id>")
+    values = [
+        ids
+        for key, ids in parse_qs(parsed.query, keep_blank_values=True).items()
+        if key.lower() == "iwine"
+    ]
+    if len(values) != 1 or len(values[0]) != 1:
+        raise ValueError("CellarTracker link must contain exactly one iWine id")
+    wine_id = values[0][0]
+    if not wine_id.isdigit() or int(wine_id) <= 0:
+        raise ValueError("CellarTracker link must contain a positive iWine id")
+    return str(int(wine_id))
+
+
+def cellartracker_url(value: str | None) -> str | None:
+    """Return the canonical CellarTracker wine URL for a stored id."""
+    if not value:
+        return None
+    return f"https://www.cellartracker.com/wine.asp?iWine={cellartracker_wine_id(value)}"
+
+
+def safe_cellartracker_url(value: str | None) -> str | None:
+    """Canonicalize legacy CellarTracker data without breaking read surfaces."""
+    try:
+        return cellartracker_url(value)
+    except ValueError:
+        return None
+
+
+def canonical_vivino_url(value: str) -> str:
+    """Validate and canonicalize an exact Vivino wine-page URL."""
+    parsed = urlparse(str(value).strip())
+    if parsed.scheme != "https" or parsed.hostname not in {"vivino.com", "www.vivino.com"}:
+        raise ValueError("Vivino link must be an https://www.vivino.com wine URL")
+    path = parsed.path.rstrip("/")
+    if re.search(r"/w/\d+$", path, re.IGNORECASE) is None:
+        raise ValueError("Vivino link must be an exact wine page ending in /w/<id>")
+    return f"https://www.vivino.com{path}"
+
+
 def _clean_wine_fields(fields: dict[str, Any]) -> dict[str, Any]:
     unknown = set(fields) - WINE_FIELDS
     if unknown:
         raise ValueError(f"unknown wine fields: {sorted(unknown)}")
+    has_cellartracker_url = "cellartracker_url" in fields
     cleaned: dict[str, Any] = {}
     for key, value in fields.items():
         if isinstance(value, str):
             value = value.strip()
         cleaned[key] = value if value != "" else None
+    cellartracker_link = cleaned.pop("cellartracker_url", None)
+    if has_cellartracker_url:
+        link_id = (
+            cellartracker_wine_id(cellartracker_link)
+            if cellartracker_link is not None
+            else None
+        )
+        existing_id = cleaned.get("cellartracker_wine_id")
+        if (
+            existing_id not in (None, "")
+            and link_id is not None
+            and cellartracker_wine_id(existing_id) != link_id
+        ):
+            raise ValueError("cellartracker_url and cellartracker_wine_id disagree")
+        cleaned["cellartracker_wine_id"] = link_id
+    elif "cellartracker_wine_id" in cleaned and cleaned["cellartracker_wine_id"] is not None:
+        cleaned["cellartracker_wine_id"] = cellartracker_wine_id(
+            cleaned["cellartracker_wine_id"]
+        )
+    if cleaned.get("vivino_url") is not None:
+        cleaned["vivino_url"] = canonical_vivino_url(cleaned["vivino_url"])
     wine_type = cleaned.get("wine_type")
     if wine_type is not None:
         wine_type = wine_type.lower()
@@ -309,7 +386,9 @@ def add_wine(conn: sqlite3.Connection, **fields: Any) -> dict[str, Any]:
     return get_wine(conn, cursor.lastrowid)
 
 
-def update_wine(conn: sqlite3.Connection, wine_id: int, **fields: Any) -> dict[str, Any]:
+def update_wine(
+    conn: sqlite3.Connection, wine_id: int, *, commit: bool = True, **fields: Any
+) -> dict[str, Any]:
     cleaned = _clean_wine_fields(fields)
     if not cleaned:
         raise ValueError("no fields to update")
@@ -320,7 +399,8 @@ def update_wine(conn: sqlite3.Connection, wine_id: int, **fields: Any) -> dict[s
         f"UPDATE wines SET {assignments}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
         (*cleaned.values(), wine_id),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return get_wine(conn, wine_id)
 
 
@@ -1112,6 +1192,7 @@ def list_inventory(
     breakdown = rating_breakdown(conn, [item["id"] for item in items])
     for item in items:
         item["ratings"] = breakdown.get(item["id"], [])
+        item["cellartracker_url"] = safe_cellartracker_url(item.get("cellartracker_wine_id"))
     return {
         "summary": summary(conn),
         "items": items,
