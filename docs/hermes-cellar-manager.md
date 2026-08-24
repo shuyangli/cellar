@@ -89,3 +89,23 @@ label) with provider search links. A human or AI reviewer fills exact URLs and
 marks only verified rows `approved`. Run `apply` without `--write` first; the
 write mode re-validates URL shapes and unchanged wine identity, then creates
 and integrity-checks a SQLite backup before updating records.
+
+## Backfilling provider metrics
+
+`scripts/backfill_provider_metrics.py` enriches only existing exact links. It
+uses Vivino's vintage response and the **user-selected US/USD** price surface,
+verifies the returned wine ID, year, market, and currency before storing a
+rating or listed price, and upgrades successful four-digit Vivino links to
+their matching `?year=YYYY` form. It tries the exact CellarTracker page for a
+community rating only; CellarTracker prices are deliberately out of scope for
+this backfill. WAF blocks leave its values untouched. Run a dry run first:
+
+```sh
+.venv/bin/python scripts/backfill_provider_metrics.py
+```
+
+After reviewing the JSON plan, add `--write` to take a verified SQLite backup
+and apply the planned changes atomically. It defaults to in-stock wines;
+`--all` includes historical labels. Never substitute a nearby vintage, infer a
+currency, or clear a previously stored provider value just because the source
+is temporarily unavailable.
