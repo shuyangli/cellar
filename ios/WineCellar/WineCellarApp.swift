@@ -2,8 +2,6 @@ import SwiftUI
 
 @main
 struct WineCellarApp: App {
-    @AppStorage(Appearance.storageKey) private var appearanceRaw = Appearance.system.rawValue
-
     init() {
         ThemeSetup.configure()
     }
@@ -11,9 +9,28 @@ struct WineCellarApp: App {
     var body: some Scene {
         WindowGroup {
             RootTabView()
-                .onAppear { applyAppearance() }
-                .onChange(of: appearanceRaw) { _, _ in applyAppearance() }
         }
+    }
+}
+
+struct RootTabView: View {
+    @AppStorage(Appearance.storageKey) private var appearanceRaw = Appearance.system.rawValue
+
+    var body: some View {
+        TabView {
+            CellarListView()
+                .tabItem { Label("Cellar", systemImage: "wineglass") }
+            DrinkNowView()
+                .tabItem { Label("Drink Now", systemImage: "sparkles") }
+            ShoppingView()
+                .tabItem { Label("Shopping", systemImage: "shippingbox") }
+            HistoryView()
+                .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
+            StatsView()
+                .tabItem { Label("Stats", systemImage: "chart.bar") }
+        }
+        .onAppear { applyAppearance() }
+        .onChange(of: appearanceRaw) { _, _ in applyAppearance() }
     }
 
     /// Window-level override so sheets, alerts, and dialogs all follow the
@@ -29,23 +46,6 @@ struct WineCellarApp: App {
             for window in scene.windows {
                 window.overrideUserInterfaceStyle = style
             }
-        }
-    }
-}
-
-struct RootTabView: View {
-    var body: some View {
-        TabView {
-            CellarListView()
-                .tabItem { Label("Cellar", systemImage: "wineglass") }
-            DrinkNowView()
-                .tabItem { Label("Drink Now", systemImage: "sparkles") }
-            ShoppingView()
-                .tabItem { Label("Shopping", systemImage: "shippingbox") }
-            HistoryView()
-                .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
-            StatsView()
-                .tabItem { Label("Stats", systemImage: "chart.bar") }
         }
     }
 }
