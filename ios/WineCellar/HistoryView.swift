@@ -39,7 +39,7 @@ struct HistoryView: View {
             WineDetailPlaceholder(title: "Select an entry")
         }
         .sheet(isPresented: $showLogTasting) {
-            ExternalTastingForm { Task { await model.load() } }
+            ExternalTastingForm { model.entryChanged() }
         }
     }
 }
@@ -264,12 +264,14 @@ struct HistoryRowView: View {
                     .font(.subheadline.weight(.medium))
                     .lineLimit(2)
                 if compact {
-                    HStack(spacing: 6) {
-                        Text("\(entry.displayDate) · \(entry.verb)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        if let event = entry.event {
-                            InventoryDeltaBadge(delta: event.delta)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) {
+                            compactActivity
+                            reviewSummary
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            compactActivity
+                            reviewSummary
                         }
                     }
                 } else {
@@ -292,6 +294,17 @@ struct HistoryRowView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(expanded ? 180 : 0))
+            }
+        }
+    }
+
+    private var compactActivity: some View {
+        HStack(spacing: 6) {
+            Text("\(entry.displayDate) · \(entry.verb)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let event = entry.event {
+                InventoryDeltaBadge(delta: event.delta)
             }
         }
     }
