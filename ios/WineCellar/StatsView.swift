@@ -3,41 +3,15 @@ import SwiftUI
 struct StatsView: View {
     @State private var stats: StatsPayload?
     @State private var error: String?
+    @State private var selectedWineId: Int?
 
     var body: some View {
-        NavigationStack {
-            AsyncContent(value: stats, error: error, retry: { Task { await load() } }) { stats in
-                List {
-                    summarySection(stats)
-                    barSection(
-                        "By type",
-                        rows: stats.byType.map { ($0.wineType, $0.bottles) },
-                        emptyText: "Nothing in stock."
-                    )
-                    barSection(
-                        "By country",
-                        rows: stats.byCountry.map { ($0.country, $0.bottles) },
-                        emptyText: "Nothing in stock."
-                    )
-                    barSection(
-                        "By region",
-                        rows: stats.byRegion.map { ($0.region, $0.bottles) },
-                        emptyText: "Nothing in stock."
-                    )
-                    spendSection(stats)
-                    topRatedSection(stats)
-                    recentTastingsSection(stats)
-                }
-                .listStyle(.insetGrouped)
-                .cellarBackground()
-                .refreshable { await load() }
-            }
-            .navigationTitle("Stats")
-            .navigationDestination(for: Int.self) { wineId in
-                WineDetailView(wineId: wineId)
-            }
-            .task { if stats == nil { await load() } }
+        WineSplitView {
+            StatsSidebar(stats: stats, error: error, selectedWineId: $selectedWineId, load: load)
+        } detail: {
+            StatsDetail(stats: stats, selectedWineId: $selectedWineId, load: load)
         }
+        .task { if stats == nil { await load() } }
     }
 
     private func load() async {
@@ -47,6 +21,34 @@ struct StatsView: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+}
+
+/// Every section in a single column; the summary and the selectable wines when
+/// the breakdown has its own column.
+private struct StatsSidebar: View {
+    var stats: StatsPayload?
+    var error: String?
+    @Binding var selectedWineId: Int?
+    var load: () async -> Void
+
+    @Environment(\.wineSplitCollapsed) private var collapsed
+
+    var body: some View {
+        AsyncContent(value: stats, error: error, retry: { Task { await load() } }) { stats in
+            List(selection: $selectedWineId) {
+                summarySection(stats)
+                if collapsed {
+                    StatsBreakdownSections(stats: stats)
+                }
+                topRatedSection(stats)
+                recentTastingsSection(stats)
+            }
+            .listStyle(.insetGrouped)
+            .cellarBackground()
+            .refreshable { await load() }
+        }
+        .navigationTitle("Stats")
     }
 
     private func summarySection(_ stats: StatsPayload) -> some View {
@@ -80,53 +82,6 @@ struct StatsView: View {
     }
 
     @ViewBuilder
-    private func barSection(
-        _ title: String,
-        rows: [(label: String, value: Int)],
-        emptyText: String
-    ) -> some View {
-        Section(title) {
-            if rows.isEmpty {
-                Text(emptyText).foregroundStyle(.secondary)
-            } else {
-                let maxValue = max(1, rows.map(\.value).max() ?? 1)
-                ForEach(rows, id: \.label) { row in
-                    BarRow(
-                        label: row.label,
-                        fraction: Double(row.value) / Double(maxValue),
-                        value: "\(row.value)"
-                    )
-                }
-            }
-        }
-        .listRowBackground(Color.appCard)
-    }
-
-    @ViewBuilder
-    private func spendSection(_ stats: StatsPayload) -> some View {
-        Section {
-            let months = stats.spendByMonth.suffix(12)
-            if months.isEmpty {
-                Text("No purchases logged.").foregroundStyle(.secondary)
-            } else {
-                let maxSpend = max(1, months.map(\.spend).max() ?? 1)
-                ForEach(Array(months)) { month in
-                    BarRow(
-                        label: month.month ?? "—",
-                        fraction: month.spend / maxSpend,
-                        value: Format.dollars(month.spend, fractionDigits: 0)
-                    )
-                }
-            }
-        } header: {
-            Text("Spend by month")
-        } footer: {
-            Text("Last 12 months with purchases.")
-        }
-        .listRowBackground(Color.appCard)
-    }
-
-    @ViewBuilder
     private func topRatedSection(_ stats: StatsPayload) -> some View {
         Section {
             if stats.topRated.isEmpty {
@@ -152,7 +107,10 @@ struct StatsView: View {
                                 RatingBadge(rating: rating, initials: nil)
                             }
                         }
+                        .foregroundStyle(Color.primary)
                     }
+                    .tag(wine.id)
+                    .wineRowBackground(selected: selectedWineId == wine.id)
                 }
             }
         } header: {
@@ -192,8 +150,127 @@ struct StatsView: View {
                                 RatingBadge(rating: Double(rating), initials: tasting.userInitials)
                             }
                         }
+                        .foregroundStyle(Color.primary)
+                    }
+                    .tag(tasting.wineId)
+                    .wineRowBackground(selected: selectedWineId == tasting.wineId)
+                }
+        }
+        .listRowBackground(Color.appCard)
+    }
+}
+
+private struct StatsDetail: View {
+    var stats: StatsPayload?
+    @Binding var selectedWineId: Int?
+    var load: () async -> Void
+
+    @Environment(\.wineSplitCollapsed) private var collapsed
+
+    var body: some View {
+        if let id = selectedWineId {
+            WineDetailView(wineId: id, onChanged: { change in
+                Task { await load() }
+                if case .deleted = change { selectedWineId = nil }
+            })
+            .id(id)
+            .toolbar {
+                if !collapsed {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            selectedWineId = nil
+                        } label: {
+                            Image(systemName: "chart.bar")
+                        }
+                        .accessibilityLabel("Show breakdown")
                     }
                 }
+            }
+        } else {
+            breakdown.navigationTitle("Breakdown")
+        }
+    }
+
+    @ViewBuilder
+    private var breakdown: some View {
+        if let stats {
+            List {
+                StatsBreakdownSections(stats: stats)
+            }
+            .listStyle(.insetGrouped)
+            .cellarBackground()
+            .refreshable { await load() }
+        } else {
+            CellarBackground()
+        }
+    }
+}
+
+private struct StatsBreakdownSections: View {
+    var stats: StatsPayload
+
+    var body: some View {
+        barSection(
+            "By type",
+            rows: stats.byType.map { ($0.wineType, $0.bottles) },
+            emptyText: "Nothing in stock."
+        )
+        barSection(
+            "By country",
+            rows: stats.byCountry.map { ($0.country, $0.bottles) },
+            emptyText: "Nothing in stock."
+        )
+        barSection(
+            "By region",
+            rows: stats.byRegion.map { ($0.region, $0.bottles) },
+            emptyText: "Nothing in stock."
+        )
+        spendSection
+    }
+
+    @ViewBuilder
+    private func barSection(
+        _ title: String,
+        rows: [(label: String, value: Int)],
+        emptyText: String
+    ) -> some View {
+        Section(title) {
+            if rows.isEmpty {
+                Text(emptyText).foregroundStyle(.secondary)
+            } else {
+                let maxValue = max(1, rows.map(\.value).max() ?? 1)
+                ForEach(rows, id: \.label) { row in
+                    BarRow(
+                        label: row.label,
+                        fraction: Double(row.value) / Double(maxValue),
+                        value: "\(row.value)"
+                    )
+                }
+            }
+        }
+        .listRowBackground(Color.appCard)
+    }
+
+    @ViewBuilder
+    private var spendSection: some View {
+        Section {
+            let months = stats.spendByMonth.suffix(12)
+            if months.isEmpty {
+                Text("No purchases logged.").foregroundStyle(.secondary)
+            } else {
+                let maxSpend = max(1, months.map(\.spend).max() ?? 1)
+                ForEach(Array(months)) { month in
+                    BarRow(
+                        label: month.month ?? "—",
+                        fraction: month.spend / maxSpend,
+                        value: Format.dollars(month.spend, fractionDigits: 0)
+                    )
+                }
+            }
+        } header: {
+            Text("Spend by month")
+        } footer: {
+            Text("Last 12 months with purchases.")
         }
         .listRowBackground(Color.appCard)
     }

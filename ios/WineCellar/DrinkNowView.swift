@@ -3,11 +3,13 @@ import SwiftUI
 struct DrinkNowView: View {
     @State private var payload: DrinkNowPayload?
     @State private var error: String?
+    @State private var selectedWineId: Int?
+    @State private var narrowList = false
 
     var body: some View {
-        NavigationStack {
+        WineSplitView {
             AsyncContent(value: payload, error: error, retry: { Task { await load() } }) { payload in
-                List {
+                List(selection: $selectedWineId) {
                     bucket("Past peak", payload.pastPeak, .destructive, payload.year,
                            "Probably fading — open these first, adjust expectations.")
                     bucket("Drink first", payload.drinkFirst, .destructive, payload.year,
@@ -26,12 +28,20 @@ struct DrinkNowView: View {
                 .listStyle(.insetGrouped)
                 .cellarBackground()
                 .refreshable { await load() }
+                .onGeometryChange(for: Bool.self) { $0.size.width < 360 } action: { narrowList = $0 }
             }
             .navigationTitle("Drink Now")
-            .navigationDestination(for: Int.self) { wineId in
-                WineDetailView(wineId: wineId)
-            }
             .task { if payload == nil { await load() } }
+        } detail: {
+            if let id = selectedWineId {
+                WineDetailView(wineId: id, onChanged: { change in
+                    Task { await load() }
+                    if case .deleted = change { selectedWineId = nil }
+                })
+                .id(id)
+            } else {
+                WineDetailPlaceholder(title: "Select a wine")
+            }
         }
     }
 
@@ -65,16 +75,19 @@ struct DrinkNowView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
+                                if narrowList {
+                                    drinkingWindow(wine, year)
+                                }
                             }
                             Spacer()
-                            DrinkingWindowView(
-                                start: wine.drinkingWindowStart,
-                                end: wine.drinkingWindowEnd,
-                                referenceYear: year
-                            )
-                            .font(.caption)
+                            if !narrowList {
+                                drinkingWindow(wine, year)
+                            }
                         }
+                        .foregroundStyle(Color.primary)
                     }
+                    .tag(wine.id)
+                    .wineRowBackground(selected: selectedWineId == wine.id)
                 }
             } header: {
                 HStack {
@@ -86,6 +99,15 @@ struct DrinkNowView: View {
             }
             .listRowBackground(Color.appCard)
         }
+    }
+
+    private func drinkingWindow(_ wine: DrinkNowWine, _ year: Int) -> some View {
+        DrinkingWindowView(
+            start: wine.drinkingWindowStart,
+            end: wine.drinkingWindowEnd,
+            referenceYear: year
+        )
+        .font(.caption)
     }
 
     private func load() async {
