@@ -3,11 +3,12 @@ import SwiftUI
 struct DrinkNowView: View {
     @State private var payload: DrinkNowPayload?
     @State private var error: String?
+    @State private var selectedWineId: Int?
 
     var body: some View {
-        NavigationStack {
+        WineSplitView {
             AsyncContent(value: payload, error: error, retry: { Task { await load() } }) { payload in
-                List {
+                List(selection: $selectedWineId) {
                     bucket("Past peak", payload.pastPeak, .destructive, payload.year,
                            "Probably fading — open these first, adjust expectations.")
                     bucket("Drink first", payload.drinkFirst, .destructive, payload.year,
@@ -28,10 +29,17 @@ struct DrinkNowView: View {
                 .refreshable { await load() }
             }
             .navigationTitle("Drink Now")
-            .navigationDestination(for: Int.self) { wineId in
-                WineDetailView(wineId: wineId)
-            }
             .task { if payload == nil { await load() } }
+        } detail: {
+            if let id = selectedWineId {
+                WineDetailView(wineId: id, onChanged: { change in
+                    Task { await load() }
+                    if case .deleted = change { selectedWineId = nil }
+                })
+                .id(id)
+            } else {
+                WineDetailPlaceholder(title: "Select a wine")
+            }
         }
     }
 
@@ -46,35 +54,9 @@ struct DrinkNowView: View {
         if !wines.isEmpty {
             Section {
                 ForEach(wines) { wine in
-                    NavigationLink(value: wine.id) {
-                        HStack(spacing: 10) {
-                            WineTypeIcon(wineType: wine.wineType, size: 32)
-                            TextBadge(text: "×\(wine.quantity)", variant: .secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(wine.producer)
-                                    .font(.subheadline.weight(.medium))
-                                    .lineLimit(1)
-                                Text(
-                                    [
-                                        [wine.wineName, wine.vintage].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " "),
-                                        [wine.region, wine.wineType].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · "),
-                                    ]
-                                    .filter { !$0.isEmpty }
-                                    .joined(separator: " — ")
-                                )
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                            }
-                            Spacer()
-                            DrinkingWindowView(
-                                start: wine.drinkingWindowStart,
-                                end: wine.drinkingWindowEnd,
-                                referenceYear: year
-                            )
-                            .font(.caption)
-                        }
-                    }
+                    DrinkNowRow(wine: wine, year: year)
+                        .tag(wine.id)
+                        .wineRowBackground(selected: selectedWineId == wine.id)
                 }
             } header: {
                 HStack {
@@ -95,5 +77,56 @@ struct DrinkNowView: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+}
+
+private struct DrinkNowRow: View {
+    var wine: DrinkNowWine
+    var year: Int
+
+    @Environment(\.wineListNarrow) private var compact
+
+    private var subtitle: String {
+        [
+            [wine.wineName, wine.vintage].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " "),
+            [wine.region, wine.wineType].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · "),
+        ]
+        .filter { !$0.isEmpty }
+        .joined(separator: " — ")
+    }
+
+    var body: some View {
+        NavigationLink(value: wine.id) {
+            HStack(spacing: 10) {
+                WineTypeIcon(wineType: wine.wineType, size: 32)
+                TextBadge(text: "×\(wine.quantity)", variant: .secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(wine.producer)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    if compact {
+                        drinkingWindow
+                    }
+                }
+                Spacer()
+                if !compact {
+                    drinkingWindow
+                }
+            }
+            .foregroundStyle(Color.primary)
+        }
+    }
+
+    private var drinkingWindow: some View {
+        DrinkingWindowView(
+            start: wine.drinkingWindowStart,
+            end: wine.drinkingWindowEnd,
+            referenceYear: year
+        )
+        .font(.caption)
     }
 }

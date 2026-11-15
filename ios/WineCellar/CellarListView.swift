@@ -62,6 +62,17 @@ final class CellarListModel {
         }
         pendingWineIds.remove(wine.id)
     }
+
+    func apply(_ change: WineChange) {
+        switch change {
+        case .updated(let wine):
+            if let index = items.firstIndex(where: { $0.id == wine.id }) {
+                items[index] = wine
+            }
+        case .deleted(let id):
+            items.removeAll { $0.id == id }
+        }
+    }
 }
 
 struct CellarListView: View {
@@ -69,71 +80,87 @@ struct CellarListView: View {
     @State private var confirmDrinkAll: Wine?
     @State private var showSettings = false
     @State private var showAddWine = false
+    @State private var selectedWineId: Int?
+    @State private var detailRefresh = 0
 
     var body: some View {
-        NavigationStack {
-            List {
-                if let summary = model.page?.summary {
-                    summarySection(summary)
-                }
-                filterSection
-                wineRows
+        WineSplitView {
+            sidebar
+        } detail: {
+            if let id = selectedWineId {
+                WineDetailView(wineId: id, refreshToken: detailRefresh, onChanged: { change in
+                    model.apply(change)
+                    if case .deleted = change { selectedWineId = nil }
+                })
+                .id(id)
+            } else {
+                WineDetailPlaceholder(title: "Select a wine")
             }
-            .listStyle(.insetGrouped)
-            .cellarBackground()
-            .navigationTitle("Cellar")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
+        }
+        .sheet(isPresented: $showSettings) { SettingsView() }
+        .sheet(isPresented: $showAddWine) {
+            AddWineForm { Task { await model.load() } }
+        }
+    }
+
+    private var sidebar: some View {
+        List(selection: $selectedWineId) {
+            if let summary = model.page?.summary {
+                summarySection(summary)
+            }
+            filterSection
+            wineRows
+        }
+        .listStyle(.insetGrouped)
+        .cellarBackground()
+        .navigationTitle("Cellar")
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    showSettings = true
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showAddWine = true
+                } label: {
+                    Label("Add a wine", systemImage: "plus")
+                }
+            }
+        }
+        .searchable(text: $model.searchText, prompt: "Producer, wine, region, grape…")
+        .onSubmit(of: .search) { Task { await model.load() } }
+        .onChange(of: model.searchText) { _, newValue in
+            if newValue.isEmpty { Task { await model.load() } }
+        }
+        .refreshable { await model.load() }
+        .task { if model.page == nil { await model.load() } }
+        .confirmationDialog(
+            confirmDrinkAll.map {
+                "Drink all \($0.quantity) bottles of \($0.title)?"
+            } ?? "",
+            isPresented: Binding(
+                get: { confirmDrinkAll != nil },
+                set: { if !$0 { confirmDrinkAll = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let wine = confirmDrinkAll {
+                Button("Drink all \(wine.quantity)", role: .destructive) {
+                    Task {
+                        await model.drink(wine, count: wine.quantity)
+                        detailRefresh += 1
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showAddWine = true
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                }
             }
-            .searchable(text: $model.searchText, prompt: "Producer, wine, region, grape…")
-            .onSubmit(of: .search) { Task { await model.load() } }
-            .onChange(of: model.searchText) { _, newValue in
-                if newValue.isEmpty { Task { await model.load() } }
-            }
-            .refreshable { await model.load() }
-            .task { if model.page == nil { await model.load() } }
-            .navigationDestination(for: Int.self) { wineId in
-                WineDetailView(wineId: wineId)
-            }
-            .sheet(isPresented: $showSettings) { SettingsView() }
-            .sheet(isPresented: $showAddWine) {
-                AddWineForm { Task { await model.load() } }
-            }
-            .confirmationDialog(
-                confirmDrinkAll.map {
-                    "Drink all \($0.quantity) bottles of \($0.title)?"
-                } ?? "",
-                isPresented: Binding(
-                    get: { confirmDrinkAll != nil },
-                    set: { if !$0 { confirmDrinkAll = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                if let wine = confirmDrinkAll {
-                    Button("Drink all \(wine.quantity)", role: .destructive) {
-                        Task { await model.drink(wine, count: wine.quantity) }
-                    }
-                }
-            }
-            .overlay {
-                if model.page == nil {
-                    AsyncContent(value: model.page, error: model.error, retry: {
-                        Task { await model.load() }
-                    }) { _ in EmptyView() }
-                }
+        }
+        .overlay {
+            if model.page == nil {
+                AsyncContent(value: model.page, error: model.error, retry: {
+                    Task { await model.load() }
+                }) { _ in EmptyView() }
             }
         }
     }
@@ -239,9 +266,16 @@ struct CellarListView: View {
                             wine: wine,
                             pending: model.pendingWineIds.contains(wine.id),
                             error: model.rowErrors[wine.id],
-                            drinkOne: { Task { await model.drink(wine, count: 1) } },
+                            drinkOne: {
+                                Task {
+                                    await model.drink(wine, count: 1)
+                                    detailRefresh += 1
+                                }
+                            },
                             drinkAll: { confirmDrinkAll = wine }
                         )
+                        .tag(wine.id)
+                        .wineRowBackground(selected: selectedWineId == wine.id)
                     }
                     if page.pagination.hasNext {
                         HStack {
@@ -273,6 +307,8 @@ struct WineRow: View {
     var drinkOne: () -> Void = {}
     var drinkAll: () -> Void = {}
 
+    @Environment(\.wineListNarrow) private var compact
+
     private var subtitle: String {
         [
             wine.vintage?.isEmpty == false ? wine.vintage! : "Vintage unknown",
@@ -296,6 +332,9 @@ struct WineRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                    if compact {
+                        RatingBadges(ratings: wine.ratings ?? [])
+                    }
                     if let error {
                         Text(error)
                             .font(.caption2)
@@ -307,10 +346,13 @@ struct WineRow: View {
                     Text("\(wine.quantity)×")
                         .font(.subheadline.weight(.semibold))
                         .monospacedDigit()
-                    RatingBadges(ratings: wine.ratings ?? [])
+                    if !compact {
+                        RatingBadges(ratings: wine.ratings ?? [])
+                    }
                 }
             }
             .opacity(pending ? 0.5 : 1)
+            .foregroundStyle(Color.primary)
         }
         .swipeActions(edge: .trailing) {
             if wine.quantity >= 1 {

@@ -1,62 +1,13 @@
 import SwiftUI
 
-struct HistoryView: View {
-    @State private var entries: [HistoryEntry]?
-    @State private var error: String?
-    @State private var showLogTasting = false
+@MainActor @Observable
+final class HistoryModel {
+    var entries: [HistoryEntry]?
+    var error: String?
+    /// Bumped when an entry's reviews change, so a shown wine reloads.
+    var revision = 0
 
-    var body: some View {
-        NavigationStack {
-            // Plain ScrollView instead of List: expansion animates smoothly
-            // (no UIKit row-height fighting) and each button in a card is
-            // hit-tested individually (List fires every borderless button in
-            // a row on any tap).
-            AsyncContent(value: entries, error: error, retry: { Task { await load() } }) { entries in
-                ScrollView {
-                    LazyVStack(spacing: 10) {
-                        if entries.isEmpty {
-                            ContentUnavailableView(
-                                "No history yet",
-                                systemImage: "clock.arrow.circlepath",
-                                description: Text("Add a bottle or log a tasting.")
-                            )
-                            .padding(.top, 60)
-                        }
-                        ForEach(entries) { entry in
-                            HistoryRowView(entry: entry) { Task { await load() } }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 10)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color.appCard, in: RoundedRectangle(cornerRadius: 14))
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
-                }
-                .background(CellarBackground())
-                .refreshable { await load() }
-            }
-            .navigationTitle("History")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showLogTasting = true
-                    } label: {
-                        Label("Log a tasting", systemImage: "square.and.pencil")
-                    }
-                }
-            }
-            .sheet(isPresented: $showLogTasting) {
-                ExternalTastingForm { Task { await load() } }
-            }
-            .navigationDestination(for: Int.self) { wineId in
-                WineDetailView(wineId: wineId)
-            }
-            .task { if entries == nil { await load() } }
-        }
-    }
-
-    private func load() async {
+    func load() async {
         do {
             entries = try await CellarAPI.shared.history()
             error = nil
@@ -64,39 +15,242 @@ struct HistoryView: View {
             self.error = error.localizedDescription
         }
     }
+
+    func entryChanged() {
+        revision += 1
+        Task { await load() }
+    }
+}
+
+struct HistorySelection: Hashable {
+    var entryKey: String
+    var wineId: Int
+}
+
+struct HistoryView: View {
+    @State private var model = HistoryModel()
+    @State private var selection: HistorySelection?
+    @State private var showLogTasting = false
+
+    var body: some View {
+        WineSplitView {
+            HistoryList(model: model, selection: $selection, showLogTasting: $showLogTasting)
+        } detail: {
+            WineDetailPlaceholder(title: "Select an entry")
+        }
+        .sheet(isPresented: $showLogTasting) {
+            ExternalTastingForm { model.entryChanged() }
+        }
+    }
+}
+
+/// Cards that expand in place in a single column; with a detail column beside
+/// them, a tap selects the entry and shows it there with its wine.
+private struct HistoryList: View {
+    var model: HistoryModel
+    @Binding var selection: HistorySelection?
+    @Binding var showLogTasting: Bool
+
+    var body: some View {
+        // Plain ScrollView instead of List: expansion animates smoothly
+        // (no UIKit row-height fighting) and each button in a card is
+        // hit-tested individually (List fires every borderless button in
+        // a row on any tap).
+        AsyncContent(value: model.entries, error: model.error, retry: { Task { await model.load() } }) { entries in
+            ScrollView {
+                LazyVStack(spacing: 10) {
+                    if entries.isEmpty {
+                        ContentUnavailableView(
+                            "No history yet",
+                            systemImage: "clock.arrow.circlepath",
+                            description: Text("Add a bottle or log a tasting.")
+                        )
+                        .padding(.top, 60)
+                    }
+                    ForEach(entries) { entry in
+                        let selected = selection?.entryKey == entry.key
+                        HistoryRowView(
+                            entry: entry,
+                            openWine: { selection = HistorySelection(entryKey: entry.key, wineId: entry.wineId) },
+                            onChanged: model.entryChanged
+                        )
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            selected ? Color.appCardSelected : Color.appCard,
+                            in: RoundedRectangle(cornerRadius: 14)
+                        )
+                        .accessibilityAddTraits(selected ? .isSelected : [])
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+            .background(CellarBackground())
+            .refreshable { await model.load() }
+        }
+        .navigationTitle("History")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showLogTasting = true
+                } label: {
+                    Label("Log a tasting", systemImage: "square.and.pencil")
+                }
+            }
+        }
+        .navigationDestination(item: $selection) { selection in
+            HistoryDetail(model: model, selection: selection) { self.selection = nil }
+        }
+        .task { if model.entries == nil { await model.load() } }
+    }
+}
+
+/// The selected entry above its wine's detail.
+private struct HistoryDetail: View {
+    var model: HistoryModel
+    var selection: HistorySelection
+    var clearSelection: () -> Void
+
+    private var entry: HistoryEntry? {
+        model.entries?.first { $0.key == selection.entryKey }
+    }
+
+    var body: some View {
+        WineDetailView(
+            wineId: selection.wineId,
+            refreshToken: model.revision,
+            leading: entry.map { AnyView(HistoryEntrySection(entry: $0, onChanged: model.entryChanged)) },
+            onChanged: { change in
+                Task { await model.load() }
+                if case .deleted = change { clearSelection() }
+            }
+        )
+        .id(selection.wineId)
+    }
+}
+
+// MARK: - Entry content
+
+private extension HistoryEntry {
+    var verb: String {
+        guard let event else { return "Tasting" }
+        switch event.eventType {
+        case "purchase", "migration": return "Added"
+        case "consume": return "Drank"
+        case "gift": return event.delta < 0 ? "Gifted" : "Received"
+        default: return event.delta < 0 ? "Removed" : "Added"
+        }
+    }
+
+    var activity: String {
+        guard let event else { return "Tasting logged" }
+        let bottles = abs(event.delta)
+        return "\(verb) \(bottles) bottle\(bottles == 1 ? "" : "s")"
+    }
+
+    var purchaseLine: String? {
+        guard let event else { return nil }
+        var parts: [String] = []
+        if let vendor = event.purchaseVendor, !vendor.isEmpty { parts.append(vendor) }
+        if let price = event.purchasePricePerBottle {
+            parts.append("\(event.purchaseCurrency ?? "USD") \(String(format: "%.2f", price)) per bottle")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+}
+
+private struct HistoryEntryFacts: View {
+    var entry: HistoryEntry
+
+    var body: some View {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
+            row("Date", entry.displayDate)
+            row("Activity", entry.activity)
+            let origin = [entry.region, entry.country]
+                .compactMap { $0?.isEmpty == false ? $0 : nil }
+                .joined(separator: ", ")
+            if !origin.isEmpty {
+                row("Origin", origin)
+            }
+            if let purchase = entry.purchaseLine {
+                row("Purchase", purchase)
+            }
+            if let reason = entry.event?.reason, !reason.isEmpty {
+                row("Note", reason)
+            }
+        }
+    }
+
+    private func row(_ label: String, _ value: String) -> some View {
+        GridRow(alignment: .top) {
+            Text(label.uppercased())
+                .foregroundStyle(.secondary)
+                .gridColumnAlignment(.leading)
+            Text(value)
+        }
+    }
+}
+
+/// A history entry as a section of the wine detail list.
+private struct HistoryEntrySection: View {
+    var entry: HistoryEntry
+    var onChanged: () -> Void
+
+    @Environment(WinePresenter.self) private var presenter
+
+    var body: some View {
+        Section("History entry") {
+            HistoryEntryFacts(entry: entry)
+                .font(.subheadline)
+            ForEach(entry.reviews) { review in
+                HistoryReviewBlock(review: review, boxed: false, onChanged: onChanged)
+            }
+            if entry.event != nil && entry.reviews.isEmpty {
+                Text("No review attached.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            if let event = entry.event {
+                Button(entry.reviews.isEmpty ? "Add review" : "Add another review") {
+                    presenter.sheet = WineSheet(
+                        kind: .eventReview(eventId: event.id, defaultDate: entry.displayDate),
+                        onSaved: onChanged
+                    )
+                }
+            }
+        }
+        .listRowBackground(Color.appCard)
+    }
 }
 
 // MARK: - Row
 
 struct HistoryRowView: View {
     var entry: HistoryEntry
+    var openWine: () -> Void
     var onChanged: () -> Void
 
+    @Environment(WinePresenter.self) private var presenter
+    @Environment(\.wineListNarrow) private var compact
+    @Environment(\.wineSplitCollapsed) private var expandsInPlace
     @State private var expanded = false
-    @State private var addingReview = false
-
-    private var activity: String {
-        guard let event = entry.event else { return expanded ? "Tasting logged" : "Tasting" }
-        let bottles = abs(event.delta)
-        let count = "\(bottles) bottle\(bottles == 1 ? "" : "s")"
-        switch event.eventType {
-        case "purchase", "migration": return "Added \(count)"
-        case "consume": return "Drank \(count)"
-        case "gift": return event.delta < 0 ? "Gifted \(count)" : "Received \(count)"
-        default: return event.delta < 0 ? "Removed \(count)" : "Added \(count)"
-        }
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
-                withAnimation(.snappy) { expanded.toggle() }
+                if expandsInPlace {
+                    withAnimation(.snappy) { expanded.toggle() }
+                } else {
+                    openWine()
+                }
             } label: {
                 collapsedRow
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            if expanded {
+            if expanded && expandsInPlace {
                 expandedPanel
             }
         }
@@ -109,21 +263,49 @@ struct HistoryRowView: View {
                 Text(entry.wineTitle)
                     .font(.subheadline.weight(.medium))
                     .lineLimit(2)
-                Text("\(entry.displayDate) · \(activity)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if compact {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) {
+                            compactActivity
+                            reviewSummary
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            compactActivity
+                            reviewSummary
+                        }
+                    }
+                } else {
+                    Text("\(entry.displayDate) · \(entry.event == nil ? entry.verb : entry.activity)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
-            reviewSummary
-            if let event = entry.event {
-                InventoryDeltaBadge(delta: event.delta)
-            } else {
-                TextBadge(text: "Review", variant: .secondary)
+            if !compact {
+                reviewSummary
+                if let event = entry.event {
+                    InventoryDeltaBadge(delta: event.delta)
+                } else {
+                    TextBadge(text: "Review", variant: .secondary)
+                }
             }
-            Image(systemName: "chevron.down")
+            if expandsInPlace {
+                Image(systemName: "chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(expanded ? 180 : 0))
+            }
+        }
+    }
+
+    private var compactActivity: some View {
+        HStack(spacing: 6) {
+            Text("\(entry.displayDate) · \(entry.verb)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .rotationEffect(.degrees(expanded ? 180 : 0))
+            if let event = entry.event {
+                InventoryDeltaBadge(delta: event.delta)
+            }
         }
     }
 
@@ -148,28 +330,11 @@ struct HistoryRowView: View {
 
     private var expandedPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-                detailRow("Date", entry.displayDate)
-                detailRow("Activity", activity)
-                let origin = [entry.region, entry.country]
-                    .compactMap { $0?.isEmpty == false ? $0 : nil }
-                    .joined(separator: ", ")
-                if !origin.isEmpty {
-                    detailRow("Origin", origin)
-                }
-                if let event = entry.event, purchaseLine(event) != nil {
-                    detailRow("Purchase", purchaseLine(event)!)
-                }
-                if let reason = entry.event?.reason, !reason.isEmpty {
-                    detailRow("Note", reason)
-                }
-            }
-            .font(.caption)
+            HistoryEntryFacts(entry: entry)
+                .font(.caption)
 
-            NavigationLink(value: entry.wineId) {
-                Text("Full details")
-                    .font(.caption.weight(.medium))
-            }
+            Button("Full details") { openWine() }
+                .font(.caption.weight(.medium))
 
             ForEach(entry.reviews) { review in
                 HistoryReviewBlock(review: review, onChanged: onChanged)
@@ -181,39 +346,16 @@ struct HistoryRowView: View {
             }
             if let event = entry.event {
                 Button(entry.reviews.isEmpty ? "Add review" : "Add another review") {
-                    addingReview = true
-                }
-                .font(.caption.weight(.medium))
-                .sheet(isPresented: $addingReview) {
-                    InventoryEventReviewForm(
-                        eventId: event.id,
-                        defaultDate: entry.displayDate,
+                    presenter.sheet = WineSheet(
+                        kind: .eventReview(eventId: event.id, defaultDate: entry.displayDate),
                         onSaved: onChanged
                     )
                 }
+                .font(.caption.weight(.medium))
             }
         }
         .padding(10)
         .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-    }
-
-    private func purchaseLine(_ event: InventoryEvent) -> String? {
-        guard event.purchaseVendor != nil || event.purchasePricePerBottle != nil else { return nil }
-        var parts: [String] = []
-        if let vendor = event.purchaseVendor, !vendor.isEmpty { parts.append(vendor) }
-        if let price = event.purchasePricePerBottle {
-            parts.append("\(event.purchaseCurrency ?? "USD") \(String(format: "%.2f", price)) per bottle")
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    private func detailRow(_ label: String, _ value: String) -> some View {
-        GridRow(alignment: .top) {
-            Text(label.uppercased())
-                .foregroundStyle(.secondary)
-                .gridColumnAlignment(.leading)
-            Text(value)
-        }
     }
 }
 
@@ -221,9 +363,11 @@ struct HistoryRowView: View {
 
 struct HistoryReviewBlock: View {
     var review: Tasting
+    /// Drawn as its own inset box; off when a list row already frames it.
+    var boxed = true
     var onChanged: () -> Void
 
-    @State private var editing = false
+    @Environment(WinePresenter.self) private var presenter
 
     private var meta: String {
         var parts: [String] = []
@@ -237,6 +381,17 @@ struct HistoryReviewBlock: View {
     }
 
     var body: some View {
+        if boxed {
+            content
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(uiColor: .systemBackground).opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 if let rating = review.rating {
@@ -248,8 +403,9 @@ struct HistoryReviewBlock: View {
                     TextBadge(text: "would buy again", variant: .outline)
                 }
                 Spacer()
-                Button("Edit") { editing = true }
+                Button("Edit") { presenter.sheet = WineSheet(kind: .editTasting(review), onSaved: onChanged) }
                     .font(.caption)
+                    .buttonStyle(.borderless)
             }
             if !meta.isEmpty {
                 Text(meta).font(.caption2).foregroundStyle(.secondary)
@@ -262,12 +418,6 @@ struct HistoryReviewBlock: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-        }
-        .padding(8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(uiColor: .systemBackground).opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
-        .sheet(isPresented: $editing) {
-            TastingEditor(tasting: review, onSaved: onChanged)
         }
     }
 }

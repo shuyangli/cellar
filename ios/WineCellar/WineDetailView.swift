@@ -1,24 +1,29 @@
 import SwiftUI
 
+enum WineChange {
+    case updated(Wine)
+    case deleted(Int)
+}
+
 struct WineDetailView: View {
     var wineId: Int
+    var refreshToken = 0
+    /// Sections shown above the wine's own.
+    var leading: AnyView?
+    var onChanged: (WineChange) -> Void = { _ in }
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(WinePresenter.self) private var presenter
     @State private var wine: Wine?
     @State private var error: String?
     @State private var actionError: String?
     @State private var pending = false
-    @State private var showEdit = false
-    @State private var showLogTasting = false
-    @State private var adjustDirection: Int?
-    @State private var adjustReason = "manual correction"
-    @State private var markDrunkPrompt = false
-    @State private var drinkCountText = "1"
     @State private var confirmDelete = false
 
     var body: some View {
         AsyncContent(value: wine, error: error, retry: { Task { await load() } }) { wine in
             List {
+                if let leading { leading }
                 headerSection(wine)
                 actionsSection(wine)
                 detailsSection(wine)
@@ -33,42 +38,7 @@ struct WineDetailView: View {
         }
         .navigationTitle(wine?.producer ?? "Wine")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
-        .sheet(isPresented: $showEdit) {
-            if let wine {
-                EditWineForm(wine: wine) { Task { await load() } }
-            }
-        }
-        .sheet(isPresented: $showLogTasting) {
-            if let wine {
-                LogTastingForm(wine: wine) { Task { await load() } }
-            }
-        }
-        .alert(
-            adjustDirection == 1 ? "Reason for adding a bottle?" : "Reason for removing a bottle?",
-            isPresented: Binding(
-                get: { adjustDirection != nil },
-                set: { if !$0 { adjustDirection = nil } }
-            )
-        ) {
-            TextField("Reason", text: $adjustReason)
-            Button("Cancel", role: .cancel) {}
-            Button("Save") {
-                if let direction = adjustDirection {
-                    Task { await adjust(delta: direction, reason: adjustReason, eventType: "adjust") }
-                }
-            }
-        }
-        .alert("How many bottles did you drink?", isPresented: $markDrunkPrompt) {
-            TextField("Count", text: $drinkCountText)
-                .keyboardType(.numberPad)
-            Button("Cancel", role: .cancel) {}
-            Button("Mark drunk") {
-                Task { await markDrunk() }
-            }
-        } message: {
-            Text("\(wine?.quantity ?? 0) in cellar")
-        }
+        .task(id: refreshToken) { await load() }
         .confirmationDialog(
             "Delete \"\(wine?.producer ?? "") \(wine?.wineName ?? "")\" and ALL its purchases, tastings, and photos? This cannot be undone.",
             isPresented: $confirmDelete,
@@ -135,23 +105,29 @@ struct WineDetailView: View {
     private func actionsSection(_ wine: Wine) -> some View {
         Section {
             Button {
-                drinkCountText = "1"
-                markDrunkPrompt = true
+                presenter.ask(WinePrompt(
+                    title: "How many bottles did you drink?",
+                    message: "\(wine.quantity) in cellar",
+                    placeholder: "Count",
+                    text: "1",
+                    keyboard: .numberPad,
+                    confirmTitle: "Mark drunk",
+                    onConfirm: { text in Task { await markDrunk(countText: text) } }
+                ))
             } label: {
                 Label("Mark drunk", systemImage: "wineglass")
             }
             .disabled(wine.quantity < 1 || pending)
 
             Button {
-                showLogTasting = true
+                presenter.sheet = WineSheet(kind: .logTasting(wine), onSaved: { Task { await reload() } })
             } label: {
                 Label("Log a tasting", systemImage: "square.and.pencil")
             }
 
             HStack {
                 Button {
-                    adjustReason = "manual correction"
-                    adjustDirection = 1
+                    askAdjustReason(direction: 1)
                 } label: {
                     Label("+1 bottle", systemImage: "plus.circle")
                 }
@@ -159,8 +135,7 @@ struct WineDetailView: View {
                 .disabled(pending)
                 Spacer()
                 Button {
-                    adjustReason = "manual correction"
-                    adjustDirection = -1
+                    askAdjustReason(direction: -1)
                 } label: {
                     Label("−1 bottle", systemImage: "minus.circle")
                 }
@@ -169,7 +144,7 @@ struct WineDetailView: View {
             }
 
             Button {
-                showEdit = true
+                presenter.sheet = WineSheet(kind: .editWine(wine), onSaved: { Task { await reload() } })
             } label: {
                 Label("Edit details", systemImage: "pencil")
             }
@@ -260,7 +235,7 @@ struct WineDetailView: View {
             } else {
                 ForEach(Array(tastings)) { tasting in
                     TastingRow(tasting: tasting) {
-                        Task { await load() }
+                        Task { await reload() }
                     }
                 }
             }
@@ -285,7 +260,7 @@ struct WineDetailView: View {
             } else {
                 ForEach(purchases) { purchase in
                     PurchaseRow(purchase: purchase) {
-                        Task { await load() }
+                        Task { await reload() }
                     }
                 }
             }
@@ -325,6 +300,11 @@ struct WineDetailView: View {
         }
     }
 
+    private func reload() async {
+        await load()
+        if let wine { onChanged(.updated(wine)) }
+    }
+
     private func adjust(delta: Int, reason: String, eventType: String) async {
         pending = true
         actionError = nil
@@ -332,16 +312,26 @@ struct WineDetailView: View {
             try await CellarAPI.shared.adjustInventory(
                 wineId: wineId, delta: delta, reason: reason, eventType: eventType
             )
-            await load()
+            await reload()
         } catch {
             actionError = error.localizedDescription
         }
         pending = false
     }
 
-    private func markDrunk() async {
+    private func askAdjustReason(direction: Int) {
+        presenter.ask(WinePrompt(
+            title: direction == 1 ? "Reason for adding a bottle?" : "Reason for removing a bottle?",
+            placeholder: "Reason",
+            text: "manual correction",
+            confirmTitle: "Save",
+            onConfirm: { reason in Task { await adjust(delta: direction, reason: reason, eventType: "adjust") } }
+        ))
+    }
+
+    private func markDrunk(countText: String) async {
         guard let wine else { return }
-        guard let count = Int(drinkCountText.trimmingCharacters(in: .whitespaces)),
+        guard let count = Int(countText.trimmingCharacters(in: .whitespaces)),
               count >= 1, count <= wine.quantity
         else {
             actionError = "Enter a whole number between 1 and \(wine.quantity) bottle\(wine.quantity == 1 ? "" : "s")."
@@ -354,6 +344,7 @@ struct WineDetailView: View {
         pending = true
         do {
             try await CellarAPI.shared.deleteWine(wineId)
+            onChanged(.deleted(wineId))
             dismiss()
         } catch {
             actionError = error.localizedDescription
@@ -368,11 +359,11 @@ struct PhotoThumbnail: View {
     var url: URL
     var kind: String?
 
-    @State private var fullScreen = false
+    @Environment(WinePresenter.self) private var presenter
 
     var body: some View {
         Button {
-            fullScreen = true
+            presenter.photo = PhotoItem(url: url, kind: kind)
         } label: {
             AsyncImage(url: url) { image in
                 image.resizable().aspectRatio(contentMode: .fill)
@@ -388,25 +379,6 @@ struct PhotoThumbnail: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(kind ?? "photo")
-        .fullScreenCover(isPresented: $fullScreen) {
-            ZStack(alignment: .topTrailing) {
-                Color.black.ignoresSafeArea()
-                AsyncImage(url: url) { image in
-                    image.resizable().aspectRatio(contentMode: .fit)
-                } placeholder: {
-                    ProgressView().tint(.white)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                Button {
-                    fullScreen = false
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title)
-                        .foregroundStyle(.white.opacity(0.8))
-                        .padding()
-                }
-            }
-        }
     }
 }
 
@@ -414,7 +386,7 @@ struct TastingRow: View {
     var tasting: Tasting
     var onChanged: () -> Void
 
-    @State private var editing = false
+    @Environment(WinePresenter.self) private var presenter
     @State private var confirmDelete = false
     @State private var error: String?
 
@@ -442,7 +414,9 @@ struct TastingRow: View {
                 }
                 Spacer()
                 Menu {
-                    Button("Edit") { editing = true }
+                    Button("Edit") {
+                        presenter.sheet = WineSheet(kind: .editTasting(tasting), onSaved: onChanged)
+                    }
                     Button("Delete", role: .destructive) { confirmDelete = true }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -467,9 +441,6 @@ struct TastingRow: View {
             }
         }
         .padding(.vertical, 2)
-        .sheet(isPresented: $editing) {
-            TastingEditor(tasting: tasting, onSaved: onChanged)
-        }
         .confirmationDialog(
             "Delete this tasting? Any bottle it consumed will be returned to inventory.",
             isPresented: $confirmDelete,

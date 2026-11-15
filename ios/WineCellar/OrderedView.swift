@@ -1,6 +1,9 @@
 import SwiftUI
 
 struct OrderedListView: View {
+    @Binding var selection: ShoppingSelection?
+    var revision: Int
+
     @State private var orders: [OrderedWine]?
     @State private var error: String?
     @State private var includeArrived = false
@@ -9,7 +12,7 @@ struct OrderedListView: View {
 
     var body: some View {
         AsyncContent(value: orders, error: error, retry: { Task { await load() } }) { orders in
-            List {
+            List(selection: $selection) {
                 Section {
                     Toggle("Show arrived orders", isOn: $includeArrived)
                         .onChange(of: includeArrived) { _, _ in
@@ -24,6 +27,7 @@ struct OrderedListView: View {
                             systemImage: "shippingbox",
                             description: Text("Forward an order or tracking email to your agent and ask for it to be added here.")
                         )
+                        .listRowBackground(Color.appCard)
                     }
                     ForEach(orders) { order in
                         OrderedWineRow(
@@ -32,6 +36,8 @@ struct OrderedListView: View {
                             error: rowErrors[order.id],
                             markArrived: { Task { await markArrived(order) } }
                         )
+                        .tag(ShoppingSelection.order(order))
+                        .wineRowBackground(selected: isSelected(order))
                     }
                 } header: {
                     let active = orders.filter { $0.status == "ordered" }
@@ -40,22 +46,32 @@ struct OrderedListView: View {
                         Text("\(bottles) bottle\(bottles == 1 ? "" : "s") across \(active.count) order line\(active.count == 1 ? "" : "s")")
                     }
                 }
-                .listRowBackground(Color.appCard)
             }
             .listStyle(.insetGrouped)
             .cellarBackground()
             .refreshable { await load() }
         }
-        .navigationDestination(for: OrderedWine.self) { order in
-            OrderedWineDetailView(order: order) { Task { await load() } }
+        .onChange(of: revision) { _, _ in
+            Task { await load() }
         }
         .task { if orders == nil { await load() } }
     }
 
+    private func isSelected(_ order: OrderedWine) -> Bool {
+        if case .order(let current) = selection { return current.id == order.id }
+        return false
+    }
+
     private func load() async {
         do {
-            orders = try await CellarAPI.shared.orderedWines(includeArrived: includeArrived)
+            let loaded = try await CellarAPI.shared.orderedWines(includeArrived: includeArrived)
+            orders = loaded
             error = nil
+            if case .order(let current) = selection,
+               let fresh = loaded.first(where: { $0.id == current.id }),
+               fresh != current {
+                selection = .order(fresh)
+            }
         } catch {
             self.error = error.localizedDescription
         }
@@ -66,7 +82,10 @@ struct OrderedListView: View {
         pendingIds.insert(order.id)
         rowErrors[order.id] = nil
         do {
-            _ = try await CellarAPI.shared.orderedWineArrive(order.id)
+            let updated = try await CellarAPI.shared.orderedWineArrive(order.id)
+            if isSelected(updated) {
+                selection = .order(updated)
+            }
             await load()
         } catch {
             rowErrors[order.id] = error.localizedDescription
@@ -81,9 +100,11 @@ struct OrderedWineRow: View {
     var error: String?
     var markArrived: () -> Void
 
+    @Environment(\.wineListNarrow) private var compact
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            NavigationLink(value: order) {
+            NavigationLink(value: ShoppingSelection.order(order)) {
                 HStack(alignment: .top, spacing: 10) {
                     WineTypeIcon(wineType: order.wineType, size: 34)
                     VStack(alignment: .leading, spacing: 2) {
@@ -102,15 +123,17 @@ struct OrderedWineRow: View {
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
+                        if compact {
+                            quantityBadge.padding(.top, 2)
+                        }
                     }
                     Spacer()
-                    Text("\(order.quantity) × \(Format.bottleSize(order.bottleSizeMl))")
-                        .font(.caption.weight(.medium))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.secondary.opacity(0.12), in: Capsule())
+                    if !compact {
+                        quantityBadge
+                    }
                 }
             }
+            .foregroundStyle(Color.primary)
 
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 3) {
                 GridRow(alignment: .top) {
@@ -118,6 +141,7 @@ struct OrderedWineRow: View {
                     deliveryColumn
                 }
             }
+            .foregroundStyle(Color.primary)
 
             if order.status == "arrived" {
                 TextBadge(
@@ -140,6 +164,14 @@ struct OrderedWineRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private var quantityBadge: some View {
+        Text("\(order.quantity) × \(Format.bottleSize(order.bottleSizeMl))")
+            .font(.caption.weight(.medium))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.secondary.opacity(0.12), in: Capsule())
     }
 
     private var orderColumn: some View {
@@ -175,7 +207,9 @@ struct OrderedWineRow: View {
                         Image(systemName: "arrow.up.right.square")
                     }
                     .font(.caption)
+                    .foregroundStyle(.tint)
                 }
+                .buttonStyle(.borderless)
             } else {
                 Text("Tracking pending")
                     .font(.caption)
@@ -199,16 +233,11 @@ struct OrderedWineRow: View {
 /// Full dossier for a single order line: everything the row summarizes plus
 /// the complete notes, status, and a link into the wine's own detail view.
 struct OrderedWineDetailView: View {
-    var onChanged: () -> Void
+    var order: OrderedWine
+    var onArrived: (OrderedWine) -> Void
 
-    @State private var order: OrderedWine
     @State private var pending = false
     @State private var error: String?
-
-    init(order: OrderedWine, onChanged: @escaping () -> Void) {
-        self.onChanged = onChanged
-        _order = State(initialValue: order)
-    }
 
     var body: some View {
         List {
@@ -333,8 +362,7 @@ struct OrderedWineDetailView: View {
         pending = true
         error = nil
         do {
-            order = try await CellarAPI.shared.orderedWineArrive(order.id)
-            onChanged()
+            onArrived(try await CellarAPI.shared.orderedWineArrive(order.id))
         } catch {
             self.error = error.localizedDescription
         }

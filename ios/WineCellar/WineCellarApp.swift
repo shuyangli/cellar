@@ -2,8 +2,6 @@ import SwiftUI
 
 @main
 struct WineCellarApp: App {
-    @AppStorage(Appearance.storageKey) private var appearanceRaw = Appearance.system.rawValue
-
     init() {
         ThemeSetup.configure()
     }
@@ -11,9 +9,28 @@ struct WineCellarApp: App {
     var body: some Scene {
         WindowGroup {
             RootTabView()
-                .onAppear { applyAppearance() }
-                .onChange(of: appearanceRaw) { _, _ in applyAppearance() }
         }
+    }
+}
+
+struct RootTabView: View {
+    @AppStorage(Appearance.storageKey) private var appearanceRaw = Appearance.system.rawValue
+
+    var body: some View {
+        TabView {
+            CellarListView()
+                .tabItem { Label("Cellar", systemImage: "wineglass") }
+            DrinkNowView()
+                .tabItem { Label("Drink Now", systemImage: "sparkles") }
+            ShoppingView()
+                .tabItem { Label("Shopping", systemImage: "shippingbox") }
+            HistoryView()
+                .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
+            StatsView()
+                .tabItem { Label("Stats", systemImage: "chart.bar") }
+        }
+        .onAppear { applyAppearance() }
+        .onChange(of: appearanceRaw) { _, _ in applyAppearance() }
     }
 
     /// Window-level override so sheets, alerts, and dialogs all follow the
@@ -33,21 +50,9 @@ struct WineCellarApp: App {
     }
 }
 
-struct RootTabView: View {
-    var body: some View {
-        TabView {
-            CellarListView()
-                .tabItem { Label("Cellar", systemImage: "wineglass") }
-            DrinkNowView()
-                .tabItem { Label("Drink Now", systemImage: "sparkles") }
-            ShoppingView()
-                .tabItem { Label("Shopping", systemImage: "shippingbox") }
-            HistoryView()
-                .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
-            StatsView()
-                .tabItem { Label("Stats", systemImage: "chart.bar") }
-        }
-    }
+enum ShoppingSelection: Hashable {
+    case order(OrderedWine)
+    case wine(Int)
 }
 
 /// Ordered + Wishlist share one tab behind a segmented picker. The picker
@@ -56,43 +61,69 @@ struct RootTabView: View {
 struct ShoppingView: View {
     @State private var section = 0
     @State private var showAddWishlistForm = false
+    @State private var selection: ShoppingSelection?
+    @State private var revision = 0
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                Picker("Section", selection: $section) {
-                    Text("Ordered").tag(0)
-                    Text("Wishlist").tag(1)
+        WineSplitView {
+            sidebar
+        } detail: {
+            switch selection {
+            case .order(let order):
+                OrderedWineDetailView(order: order) { updated in
+                    selection = .order(updated)
+                    revision += 1
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.bottom, 6)
-                ZStack {
-                    OrderedListView()
-                        .opacity(section == 0 ? 1 : 0)
-                        .allowsHitTesting(section == 0)
-                        .accessibilityHidden(section != 0)
-                    WishlistListView(showAddForm: $showAddWishlistForm)
-                        .opacity(section == 1 ? 1 : 0)
-                        .allowsHitTesting(section == 1)
-                        .accessibilityHidden(section != 1)
+                .id(order.id)
+                .navigationDestination(for: Int.self) { wineId in
+                    WineDetailView(wineId: wineId, onChanged: { _ in revision += 1 })
                 }
+            case .wine(let wineId):
+                WineDetailView(wineId: wineId, onChanged: { change in
+                    revision += 1
+                    if case .deleted = change { selection = nil }
+                })
+                .id(wineId)
+            case nil:
+                WineDetailPlaceholder(title: "Select an order or wine")
             }
-            .background(CellarBackground())
-            .navigationTitle(section == 0 ? "Ordered" : "Wishlist")
-            .toolbar {
-                if section == 1 {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            showAddWishlistForm = true
-                        } label: {
-                            Image(systemName: "plus")
-                        }
+        }
+        .sheet(isPresented: $showAddWishlistForm) {
+            WishlistForm { revision += 1 }
+        }
+    }
+
+    private var sidebar: some View {
+        VStack(spacing: 0) {
+            Picker("Section", selection: $section) {
+                Text("Ordered").tag(0)
+                Text("Wishlist").tag(1)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.bottom, 6)
+            ZStack {
+                OrderedListView(selection: $selection, revision: revision)
+                    .opacity(section == 0 ? 1 : 0)
+                    .allowsHitTesting(section == 0)
+                    .accessibilityHidden(section != 0)
+                WishlistListView(selection: $selection, revision: revision)
+                    .opacity(section == 1 ? 1 : 0)
+                    .allowsHitTesting(section == 1)
+                    .accessibilityHidden(section != 1)
+            }
+        }
+        .background(CellarBackground())
+        .navigationTitle(section == 0 ? "Ordered" : "Wishlist")
+        .toolbar {
+            if section == 1 {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showAddWishlistForm = true
+                    } label: {
+                        Label("Add to the wishlist", systemImage: "plus")
                     }
                 }
-            }
-            .navigationDestination(for: Int.self) { wineId in
-                WineDetailView(wineId: wineId)
             }
         }
     }

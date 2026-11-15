@@ -36,6 +36,19 @@ server, overridable in the app's Settings (gear icon on the Cellar tab — use
     Light/Dark override in the app's Settings.
   - Screens: `CellarListView`, `WineDetailView`, `DrinkNowView`,
     `OrderedView`, `WishlistView`, `HistoryView`, `StatsView`.
+  - `WineSplitView.swift` — list/detail split used as the root of every tab
+    except Stats (two columns in regular-width windows of 800pt and up, a
+    single stack below that); it also tells rows when the list column is
+    under 390pt so they switch to their narrow layouts. History cards expand
+    in place in a single column; beside a detail column a tap selects the
+    entry and shows it above its wine.
+  - `StatsView` — one list under 640pt; from there a two-column dashboard
+    (cellar composition | spend and ratings) whose columns sit either side of
+    the fold when the device is half open.
+  - `WinePresenter.swift` — the tab's sheets, text prompts and photo cover,
+    hosted at the tab's root (`winePresenterHost()`) so they keep their state
+    when the window changes size; `PhotoViewer.swift` — full-screen photo
+    viewer.
   - Forms: `Forms.swift` (tasting editor, log tasting, edit/add wine,
     settings), `HistoryView.swift` (external tasting, event review),
     `WishlistView.swift` (wishlist add), shared `WinePicker.swift` and
@@ -100,6 +113,10 @@ xcodebuild -exportArchive -archivePath /tmp/WineCellar.xcarchive \
 xcrun altool --upload-app -f /tmp/WineCellar-export/WineCellar.ipa -t ios \
   --apiKey 9277CZY57L --apiIssuer 69a6de7f-99c8-47e3-e053-5b8c7c11a4d1
 ```
+
+   If the export fails with `Copy failed`, a non-system `rsync` (e.g.
+   Homebrew's) is on `PATH`; prefix the `-exportArchive` command with
+   `PATH=/usr/bin:/bin:/usr/sbin:/sbin`.
 
 3. That's it. Apple processes the build (~5–15 min), then pushes it to every
    internal tester automatically.

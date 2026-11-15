@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct WishlistListView: View {
-    @Binding var showAddForm: Bool
+    @Binding var selection: ShoppingSelection?
+    var revision: Int
 
     @State private var entries: [WishlistEntry]?
     @State private var error: String?
@@ -10,7 +11,7 @@ struct WishlistListView: View {
 
     var body: some View {
         AsyncContent(value: entries, error: error, retry: { Task { await load() } }) { entries in
-            List {
+            List(selection: $selection) {
                 if entries.isEmpty {
                     ContentUnavailableView(
                         "Nothing on the wishlist yet",
@@ -25,15 +26,17 @@ struct WishlistListView: View {
                         error: rowErrors[entry.id],
                         remove: { Task { await remove(entry) } }
                     )
-                    .listRowBackground(Color.appCard)
+                    .tag(ShoppingSelection.wine(entry.wineId))
+                    .foregroundStyle(Color.primary)
+                    .wineRowBackground(selected: selection == .wine(entry.wineId))
                 }
             }
             .listStyle(.insetGrouped)
             .cellarBackground()
             .refreshable { await load() }
         }
-        .sheet(isPresented: $showAddForm) {
-            WishlistForm { Task { await load() } }
+        .onChange(of: revision) { _, _ in
+            Task { await load() }
         }
         .task { if entries == nil { await load() } }
     }
@@ -80,7 +83,7 @@ struct WishlistRow: View {
     }
 
     var body: some View {
-        NavigationLink(value: entry.wineId) {
+        NavigationLink(value: ShoppingSelection.wine(entry.wineId)) {
             HStack(alignment: .top, spacing: 10) {
                 WineTypeIcon(wineType: entry.wineType, size: 34)
                 VStack(alignment: .leading, spacing: 3) {
