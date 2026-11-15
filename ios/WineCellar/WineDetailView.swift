@@ -8,6 +8,8 @@ enum WineChange {
 struct WineDetailView: View {
     var wineId: Int
     var refreshToken = 0
+    /// Sections shown above the wine's own.
+    var leading: AnyView?
     var onChanged: (WineChange) -> Void = { _ in }
 
     @Environment(\.dismiss) private var dismiss
@@ -21,6 +23,7 @@ struct WineDetailView: View {
     var body: some View {
         AsyncContent(value: wine, error: error, retry: { Task { await load() } }) { wine in
             List {
+                if let leading { leading }
                 headerSection(wine)
                 actionsSection(wine)
                 detailsSection(wine)

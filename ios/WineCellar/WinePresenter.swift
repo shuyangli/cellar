@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Sheets, text prompts and the photo cover for one tab, hosted by `WineSplitView` outside its columns.
+/// Sheets, text prompts and the photo cover for one tab, hosted by `winePresenterHost()` at the tab's root.
 @MainActor @Observable
 final class WinePresenter {
     var sheet: WineSheet?
@@ -55,4 +55,39 @@ struct PhotoItem: Identifiable {
     let id = UUID()
     var url: URL
     var kind: String?
+}
+
+private struct WinePresenterHost: ViewModifier {
+    @State private var presenter = WinePresenter()
+
+    func body(content: Content) -> some View {
+        content
+            .environment(presenter)
+            .sheet(item: $presenter.sheet) { $0.content }
+            .fullScreenCover(item: $presenter.photo) { PhotoViewer(photo: $0) }
+            .alert(
+                presenter.prompt?.title ?? "",
+                isPresented: Binding(
+                    get: { presenter.prompt != nil },
+                    set: { if !$0 { presenter.prompt = nil } }
+                ),
+                presenting: presenter.prompt
+            ) { prompt in
+                TextField(prompt.placeholder, text: $presenter.promptText)
+                    .keyboardType(prompt.keyboard)
+                Button("Cancel", role: .cancel) {}
+                Button(prompt.confirmTitle) { prompt.onConfirm(presenter.promptText) }
+            } message: { prompt in
+                if let message = prompt.message {
+                    Text(message)
+                }
+            }
+    }
+}
+
+extension View {
+    /// Provides a `WinePresenter` to the hierarchy and presents what it holds.
+    func winePresenterHost() -> some View {
+        modifier(WinePresenterHost())
+    }
 }

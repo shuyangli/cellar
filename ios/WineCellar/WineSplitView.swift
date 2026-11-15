@@ -10,7 +10,6 @@ struct WineSplitView<Sidebar: View, Detail: View>: View {
     @ViewBuilder var detail: () -> Detail
 
     @Environment(\.horizontalSizeClass) private var systemSizeClass
-    @State private var presenter = WinePresenter()
     @State private var isNarrow = false
     @State private var listIsNarrow = false
 
@@ -29,26 +28,7 @@ struct WineSplitView<Sidebar: View, Detail: View>: View {
         .environment(\.horizontalSizeClass, isNarrow ? .compact : systemSizeClass)
         .environment(\.wineSplitCollapsed, isCollapsed)
         .onGeometryChange(for: Bool.self) { $0.size.width < twoColumnMinWidth } action: { isNarrow = $0 }
-        .environment(presenter)
-        .sheet(item: $presenter.sheet) { $0.content }
-        .fullScreenCover(item: $presenter.photo) { PhotoViewer(photo: $0) }
-        .alert(
-            presenter.prompt?.title ?? "",
-            isPresented: Binding(
-                get: { presenter.prompt != nil },
-                set: { if !$0 { presenter.prompt = nil } }
-            ),
-            presenting: presenter.prompt
-        ) { prompt in
-            TextField(prompt.placeholder, text: $presenter.promptText)
-                .keyboardType(prompt.keyboard)
-            Button("Cancel", role: .cancel) {}
-            Button(prompt.confirmTitle) { prompt.onConfirm(presenter.promptText) }
-        } message: { prompt in
-            if let message = prompt.message {
-                Text(message)
-            }
-        }
+        .winePresenterHost()
     }
 }
 
