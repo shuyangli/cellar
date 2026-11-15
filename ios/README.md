@@ -38,8 +38,11 @@ server, overridable in the app's Settings (gear icon on the Cellar tab — use
     `OrderedView`, `WishlistView`, `HistoryView`, `StatsView`.
   - `WineSplitView.swift` — list/detail split used as each tab's root (two
     columns in regular-width windows of 800pt and up, a single stack below
-    that); `WinePresenter.swift` — the tab's sheets and photo cover, hosted
-    outside the columns; `PhotoViewer.swift` — full-screen photo viewer.
+    that); it also tells rows when the list column is under 390pt so they
+    switch to their narrow layouts. `WinePresenter.swift` — the tab's sheets,
+    text prompts and photo cover, hosted outside the columns so they keep
+    their state when the window changes size; `PhotoViewer.swift` —
+    full-screen photo viewer.
   - Forms: `Forms.swift` (tasting editor, log tasting, edit/add wine,
     settings), `HistoryView.swift` (external tasting, event review),
     `WishlistView.swift` (wishlist add), shared `WinePicker.swift` and
