@@ -14,6 +14,9 @@ struct HistoryView: View {
         } detail: {
             WineDetailPlaceholder(title: "Select a wine")
         }
+        .sheet(isPresented: $showLogTasting) {
+            ExternalTastingForm { Task { await load() } }
+        }
     }
 
     private var sidebar: some View {
@@ -59,9 +62,6 @@ struct HistoryView: View {
                     Label("Log a tasting", systemImage: "square.and.pencil")
                 }
             }
-        }
-        .sheet(isPresented: $showLogTasting) {
-            ExternalTastingForm { Task { await load() } }
         }
         .navigationDestination(item: $selectedWineId) { id in
             WineDetailView(wineId: id, refreshToken: detailRefresh, onChanged: { change in

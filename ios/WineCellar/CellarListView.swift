@@ -97,6 +97,10 @@ struct CellarListView: View {
                 WineDetailPlaceholder(title: "Select a wine")
             }
         }
+        .sheet(isPresented: $showSettings) { SettingsView() }
+        .sheet(isPresented: $showAddWine) {
+            AddWineForm { Task { await model.load() } }
+        }
     }
 
     private var sidebar: some View {
@@ -133,10 +137,6 @@ struct CellarListView: View {
         }
         .refreshable { await model.load() }
         .task { if model.page == nil { await model.load() } }
-        .sheet(isPresented: $showSettings) { SettingsView() }
-        .sheet(isPresented: $showAddWine) {
-            AddWineForm { Task { await model.load() } }
-        }
         .confirmationDialog(
             confirmDrinkAll.map {
                 "Drink all \($0.quantity) bottles of \($0.title)?"

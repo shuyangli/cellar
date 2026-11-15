@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct WishlistListView: View {
-    @Binding var showAddForm: Bool
     @Binding var selection: ShoppingSelection?
     var revision: Int
 
@@ -35,9 +34,6 @@ struct WishlistListView: View {
             .listStyle(.insetGrouped)
             .cellarBackground()
             .refreshable { await load() }
-        }
-        .sheet(isPresented: $showAddForm) {
-            WishlistForm { Task { await load() } }
         }
         .onChange(of: revision) { _, _ in
             Task { await load() }

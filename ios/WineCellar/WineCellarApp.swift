@@ -88,6 +88,9 @@ struct ShoppingView: View {
                 WineDetailPlaceholder(title: "Select an order or wine")
             }
         }
+        .sheet(isPresented: $showAddWishlistForm) {
+            WishlistForm { revision += 1 }
+        }
     }
 
     private var sidebar: some View {
@@ -104,7 +107,7 @@ struct ShoppingView: View {
                     .opacity(section == 0 ? 1 : 0)
                     .allowsHitTesting(section == 0)
                     .accessibilityHidden(section != 0)
-                WishlistListView(showAddForm: $showAddWishlistForm, selection: $selection, revision: revision)
+                WishlistListView(selection: $selection, revision: revision)
                     .opacity(section == 1 ? 1 : 0)
                     .allowsHitTesting(section == 1)
                     .accessibilityHidden(section != 1)
