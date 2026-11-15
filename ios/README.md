@@ -105,6 +105,10 @@ xcrun altool --upload-app -f /tmp/WineCellar-export/WineCellar.ipa -t ios \
   --apiKey 9277CZY57L --apiIssuer 69a6de7f-99c8-47e3-e053-5b8c7c11a4d1
 ```
 
+   If the export fails with `Copy failed`, a non-system `rsync` (e.g.
+   Homebrew's) is on `PATH`; prefix the `-exportArchive` command with
+   `PATH=/usr/bin:/bin:/usr/sbin:/sbin`.
+
 3. That's it. Apple processes the build (~5–15 min), then pushes it to every
    internal tester automatically.
 
