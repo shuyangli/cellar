@@ -121,7 +121,7 @@ struct ShoppingView: View {
                     Button {
                         showAddWishlistForm = true
                     } label: {
-                        Image(systemName: "plus")
+                        Label("Add to the wishlist", systemImage: "plus")
                     }
                 }
             }

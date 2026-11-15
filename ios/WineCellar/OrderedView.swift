@@ -100,6 +100,8 @@ struct OrderedWineRow: View {
     var error: String?
     var markArrived: () -> Void
 
+    @Environment(\.wineListNarrow) private var compact
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             NavigationLink(value: ShoppingSelection.order(order)) {
@@ -121,13 +123,14 @@ struct OrderedWineRow: View {
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
+                        if compact {
+                            quantityBadge.padding(.top, 2)
+                        }
                     }
                     Spacer()
-                    Text("\(order.quantity) × \(Format.bottleSize(order.bottleSizeMl))")
-                        .font(.caption.weight(.medium))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.secondary.opacity(0.12), in: Capsule())
+                    if !compact {
+                        quantityBadge
+                    }
                 }
             }
             .foregroundStyle(Color.primary)
@@ -161,6 +164,14 @@ struct OrderedWineRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private var quantityBadge: some View {
+        Text("\(order.quantity) × \(Format.bottleSize(order.bottleSizeMl))")
+            .font(.caption.weight(.medium))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.secondary.opacity(0.12), in: Capsule())
     }
 
     private var orderColumn: some View {

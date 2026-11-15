@@ -6,7 +6,6 @@ struct HistoryView: View {
     @State private var showLogTasting = false
     @State private var selectedWineId: Int?
     @State private var detailRefresh = 0
-    @State private var narrow = false
 
     var body: some View {
         WineSplitView {
@@ -36,7 +35,7 @@ struct HistoryView: View {
                         .padding(.top, 60)
                     }
                     ForEach(entries) { entry in
-                        HistoryRowView(entry: entry, compact: narrow, openWine: { selectedWineId = $0 }) {
+                        HistoryRowView(entry: entry, openWine: { selectedWineId = $0 }) {
                             Task { await load() }
                             detailRefresh += 1
                         }
@@ -51,7 +50,6 @@ struct HistoryView: View {
             }
             .background(CellarBackground())
             .refreshable { await load() }
-            .onGeometryChange(for: Bool.self) { $0.size.width < 360 } action: { narrow = $0 }
         }
         .navigationTitle("History")
         .toolbar {
@@ -87,23 +85,27 @@ struct HistoryView: View {
 
 struct HistoryRowView: View {
     var entry: HistoryEntry
-    var compact = false
     var openWine: (Int) -> Void
     var onChanged: () -> Void
 
     @Environment(WinePresenter.self) private var presenter
+    @Environment(\.wineListNarrow) private var compact
     @State private var expanded = false
 
-    private var activity: String {
+    private var verb: String {
         guard let event = entry.event else { return expanded ? "Tasting logged" : "Tasting" }
-        let bottles = abs(event.delta)
-        let count = "\(bottles) bottle\(bottles == 1 ? "" : "s")"
         switch event.eventType {
-        case "purchase", "migration": return "Added \(count)"
-        case "consume": return "Drank \(count)"
-        case "gift": return event.delta < 0 ? "Gifted \(count)" : "Received \(count)"
-        default: return event.delta < 0 ? "Removed \(count)" : "Added \(count)"
+        case "purchase", "migration": return "Added"
+        case "consume": return "Drank"
+        case "gift": return event.delta < 0 ? "Gifted" : "Received"
+        default: return event.delta < 0 ? "Removed" : "Added"
         }
+    }
+
+    private var activity: String {
+        guard let event = entry.event else { return verb }
+        let bottles = abs(event.delta)
+        return "\(verb) \(bottles) bottle\(bottles == 1 ? "" : "s")"
     }
 
     var body: some View {
@@ -128,18 +130,29 @@ struct HistoryRowView: View {
                 Text(entry.wineTitle)
                     .font(.subheadline.weight(.medium))
                     .lineLimit(2)
-                Text("\(entry.displayDate) · \(activity)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if compact {
+                    HStack(spacing: 6) {
+                        Text("\(entry.displayDate) · \(verb)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if let event = entry.event {
+                            InventoryDeltaBadge(delta: event.delta)
+                        }
+                    }
+                } else {
+                    Text("\(entry.displayDate) · \(activity)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
             if !compact {
                 reviewSummary
-            }
-            if let event = entry.event {
-                InventoryDeltaBadge(delta: event.delta)
-            } else {
-                TextBadge(text: "Review", variant: .secondary)
+                if let event = entry.event {
+                    InventoryDeltaBadge(delta: event.delta)
+                } else {
+                    TextBadge(text: "Review", variant: .secondary)
+                }
             }
             Image(systemName: "chevron.down")
                 .font(.caption)

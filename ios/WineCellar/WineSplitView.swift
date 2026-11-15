@@ -1,6 +1,7 @@
 import SwiftUI
 
 private let twoColumnMinWidth: CGFloat = 800
+private let narrowListMaxWidth: CGFloat = 390
 
 /// List/detail split for a tab root: two columns in regular-width windows of
 /// at least 800pt, a single stack otherwise.
@@ -11,12 +12,16 @@ struct WineSplitView<Sidebar: View, Detail: View>: View {
     @Environment(\.horizontalSizeClass) private var systemSizeClass
     @State private var presenter = WinePresenter()
     @State private var isNarrow = false
+    @State private var listIsNarrow = false
 
     private var isCollapsed: Bool { isNarrow || systemSizeClass == .compact }
 
     var body: some View {
         NavigationSplitView(columnVisibility: .constant(.all)) {
-            sidebar().toolbar(removing: .sidebarToggle)
+            sidebar()
+                .toolbar(removing: .sidebarToggle)
+                .onGeometryChange(for: Bool.self) { (1..<narrowListMaxWidth).contains($0.size.width) } action: { listIsNarrow = $0 }
+                .environment(\.wineListNarrow, listIsNarrow)
         } detail: {
             NavigationStack { detail() }
         }
@@ -27,12 +32,32 @@ struct WineSplitView<Sidebar: View, Detail: View>: View {
         .environment(presenter)
         .sheet(item: $presenter.sheet) { $0.content }
         .fullScreenCover(item: $presenter.photo) { PhotoViewer(photo: $0) }
+        .alert(
+            presenter.prompt?.title ?? "",
+            isPresented: Binding(
+                get: { presenter.prompt != nil },
+                set: { if !$0 { presenter.prompt = nil } }
+            ),
+            presenting: presenter.prompt
+        ) { prompt in
+            TextField(prompt.placeholder, text: $presenter.promptText)
+                .keyboardType(prompt.keyboard)
+            Button("Cancel", role: .cancel) {}
+            Button(prompt.confirmTitle) { prompt.onConfirm(presenter.promptText) }
+        } message: { prompt in
+            if let message = prompt.message {
+                Text(message)
+            }
+        }
     }
 }
 
 extension EnvironmentValues {
     /// True when the enclosing `WineSplitView` shows a single column.
     @Entry var wineSplitCollapsed: Bool = true
+
+    /// True when the list column is too narrow for the regular row layouts.
+    @Entry var wineListNarrow: Bool = false
 }
 
 struct WineDetailPlaceholder: View {

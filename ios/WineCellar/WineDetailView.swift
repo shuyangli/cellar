@@ -16,10 +16,6 @@ struct WineDetailView: View {
     @State private var error: String?
     @State private var actionError: String?
     @State private var pending = false
-    @State private var adjustDirection: Int?
-    @State private var adjustReason = "manual correction"
-    @State private var markDrunkPrompt = false
-    @State private var drinkCountText = "1"
     @State private var confirmDelete = false
 
     var body: some View {
@@ -40,31 +36,6 @@ struct WineDetailView: View {
         .navigationTitle(wine?.producer ?? "Wine")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: refreshToken) { await load() }
-        .alert(
-            adjustDirection == 1 ? "Reason for adding a bottle?" : "Reason for removing a bottle?",
-            isPresented: Binding(
-                get: { adjustDirection != nil },
-                set: { if !$0 { adjustDirection = nil } }
-            )
-        ) {
-            TextField("Reason", text: $adjustReason)
-            Button("Cancel", role: .cancel) {}
-            Button("Save") {
-                if let direction = adjustDirection {
-                    Task { await adjust(delta: direction, reason: adjustReason, eventType: "adjust") }
-                }
-            }
-        }
-        .alert("How many bottles did you drink?", isPresented: $markDrunkPrompt) {
-            TextField("Count", text: $drinkCountText)
-                .keyboardType(.numberPad)
-            Button("Cancel", role: .cancel) {}
-            Button("Mark drunk") {
-                Task { await markDrunk() }
-            }
-        } message: {
-            Text("\(wine?.quantity ?? 0) in cellar")
-        }
         .confirmationDialog(
             "Delete \"\(wine?.producer ?? "") \(wine?.wineName ?? "")\" and ALL its purchases, tastings, and photos? This cannot be undone.",
             isPresented: $confirmDelete,
@@ -131,8 +102,15 @@ struct WineDetailView: View {
     private func actionsSection(_ wine: Wine) -> some View {
         Section {
             Button {
-                drinkCountText = "1"
-                markDrunkPrompt = true
+                presenter.ask(WinePrompt(
+                    title: "How many bottles did you drink?",
+                    message: "\(wine.quantity) in cellar",
+                    placeholder: "Count",
+                    text: "1",
+                    keyboard: .numberPad,
+                    confirmTitle: "Mark drunk",
+                    onConfirm: { text in Task { await markDrunk(countText: text) } }
+                ))
             } label: {
                 Label("Mark drunk", systemImage: "wineglass")
             }
@@ -146,8 +124,7 @@ struct WineDetailView: View {
 
             HStack {
                 Button {
-                    adjustReason = "manual correction"
-                    adjustDirection = 1
+                    askAdjustReason(direction: 1)
                 } label: {
                     Label("+1 bottle", systemImage: "plus.circle")
                 }
@@ -155,8 +132,7 @@ struct WineDetailView: View {
                 .disabled(pending)
                 Spacer()
                 Button {
-                    adjustReason = "manual correction"
-                    adjustDirection = -1
+                    askAdjustReason(direction: -1)
                 } label: {
                     Label("−1 bottle", systemImage: "minus.circle")
                 }
@@ -340,9 +316,19 @@ struct WineDetailView: View {
         pending = false
     }
 
-    private func markDrunk() async {
+    private func askAdjustReason(direction: Int) {
+        presenter.ask(WinePrompt(
+            title: direction == 1 ? "Reason for adding a bottle?" : "Reason for removing a bottle?",
+            placeholder: "Reason",
+            text: "manual correction",
+            confirmTitle: "Save",
+            onConfirm: { reason in Task { await adjust(delta: direction, reason: reason, eventType: "adjust") } }
+        ))
+    }
+
+    private func markDrunk(countText: String) async {
         guard let wine else { return }
-        guard let count = Int(drinkCountText.trimmingCharacters(in: .whitespaces)),
+        guard let count = Int(countText.trimmingCharacters(in: .whitespaces)),
               count >= 1, count <= wine.quantity
         else {
             actionError = "Enter a whole number between 1 and \(wine.quantity) bottle\(wine.quantity == 1 ? "" : "s")."

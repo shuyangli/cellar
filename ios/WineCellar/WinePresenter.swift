@@ -1,10 +1,28 @@
 import SwiftUI
 
-/// Sheets and the photo cover for one tab, hosted by `WineSplitView` outside its columns.
+/// Sheets, text prompts and the photo cover for one tab, hosted by `WineSplitView` outside its columns.
 @MainActor @Observable
 final class WinePresenter {
     var sheet: WineSheet?
     var photo: PhotoItem?
+    var prompt: WinePrompt?
+    var promptText = ""
+
+    func ask(_ prompt: WinePrompt) {
+        promptText = prompt.text
+        self.prompt = prompt
+    }
+}
+
+/// A single-field alert.
+struct WinePrompt {
+    var title: String
+    var message: String?
+    var placeholder: String
+    var text: String
+    var keyboard: UIKeyboardType = .default
+    var confirmTitle: String
+    var onConfirm: (String) -> Void
 }
 
 struct WineSheet: Identifiable {

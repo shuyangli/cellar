@@ -33,6 +33,7 @@ private struct StatsSidebar: View {
     var load: () async -> Void
 
     @Environment(\.wineSplitCollapsed) private var collapsed
+    @Environment(\.wineListNarrow) private var listNarrow
 
     var body: some View {
         AsyncContent(value: stats, error: error, retry: { Task { await load() } }) { stats in
@@ -100,9 +101,11 @@ private struct StatsSidebar: View {
                                     .lineLimit(1)
                             }
                             Spacer()
-                            Text("\(wine.tastings) tasting\(wine.tastings == 1 ? "" : "s")")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                            if !listNarrow {
+                                Text("\(wine.tastings) tasting\(wine.tastings == 1 ? "" : "s")")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                             if let rating = wine.avgRating {
                                 RatingBadge(rating: rating, initials: nil)
                             }
@@ -180,14 +183,15 @@ private struct StatsDetail: View {
                         Button {
                             selectedWineId = nil
                         } label: {
-                            Image(systemName: "chart.bar")
+                            Label("Show breakdown", systemImage: "chart.bar")
                         }
-                        .accessibilityLabel("Show breakdown")
                     }
                 }
             }
         } else {
-            breakdown.navigationTitle("Breakdown")
+            breakdown
+                .navigationTitle("Breakdown")
+                .navigationBarTitleDisplayMode(.inline)
         }
     }
 

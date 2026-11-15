@@ -119,14 +119,14 @@ struct CellarListView: View {
                 Button {
                     showSettings = true
                 } label: {
-                    Image(systemName: "gearshape")
+                    Label("Settings", systemImage: "gearshape")
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     showAddWine = true
                 } label: {
-                    Image(systemName: "plus")
+                    Label("Add a wine", systemImage: "plus")
                 }
             }
         }
@@ -307,6 +307,8 @@ struct WineRow: View {
     var drinkOne: () -> Void = {}
     var drinkAll: () -> Void = {}
 
+    @Environment(\.wineListNarrow) private var compact
+
     private var subtitle: String {
         [
             wine.vintage?.isEmpty == false ? wine.vintage! : "Vintage unknown",
@@ -330,6 +332,9 @@ struct WineRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                    if compact {
+                        RatingBadges(ratings: wine.ratings ?? [])
+                    }
                     if let error {
                         Text(error)
                             .font(.caption2)
@@ -341,7 +346,9 @@ struct WineRow: View {
                     Text("\(wine.quantity)×")
                         .font(.subheadline.weight(.semibold))
                         .monospacedDigit()
-                    RatingBadges(ratings: wine.ratings ?? [])
+                    if !compact {
+                        RatingBadges(ratings: wine.ratings ?? [])
+                    }
                 }
             }
             .opacity(pending ? 0.5 : 1)
