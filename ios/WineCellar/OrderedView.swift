@@ -198,6 +198,7 @@ struct OrderedWineRow: View {
                     .font(.caption)
                     .foregroundStyle(.tint)
                 }
+                .buttonStyle(.borderless)
             } else {
                 Text("Tracking pending")
                     .font(.caption)
